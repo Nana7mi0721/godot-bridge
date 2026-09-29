@@ -2,7 +2,7 @@
 
 每条：**症状 → 机制 → 修法**。机制部分都标了可在安装版 harness 里复核的代码位置。
 
-## 1. linked root 未声明 harness 包 → 整包 import 失败
+## linked root 未声明 harness 包 → 整包 import 失败
 
 **症状**：插件所有工具消失，日志 `ERR_MODULE_NOT_FOUND: Cannot find package '@deepseek-ai/dsh-tools' imported from …`。
 
@@ -15,7 +15,7 @@
 
 **对照结论**：profile 内正常安装**不需要**这些声明；只有 linked root 需要。所以"把插件复制进 profile"是一条可行的临时绕过。
 
-## 2. peer 版本范围不匹配 → bundle 被 skip
+## peer 版本范围不匹配 → bundle 被 skip
 
 **症状**：launcher 打印 `dsh: skipping profile bundle "<name>": <reason>`；插件页报错。
 
@@ -23,7 +23,7 @@
 
 **修法**：把范围写宽以同时覆盖目标区间，例如 `>=0.1.6-0` 可覆盖 `0.1.6-alpha.2` 与 `0.2.0-rc.2`。应急手段：`dsh plugin --profile <p> allow-version <pkg>@<ver> --dsh-version <runtime> --accept-risk`（精确版本豁免，写进 profile 的 `compatibility.json`）。
 
-## 3. settings API 漂移 → 配置静默失效
+## settings API 漂移 → 配置静默失效
 
 **症状**：`ctx.someService.method is not a function` 被自己的 try/catch 吞掉；设置写入工具恒返回"服务不可用"。
 
@@ -35,11 +35,11 @@
 
 **修法**：双栈 + 单一入口——`ctx.inject(['configEditor'], …)` 装新 writer，`ctx.inject(['settings'], …)` 仅在 `typeof settings.register === 'function'` 时装旧 scope；两者共用一个"取活值"函数，避免行为分叉。
 
-## 4. 版本门禁的兼容性 vs 运行时的兼容性
+## 版本门禁的兼容性 vs 运行时的兼容性
 
 **要点**：`peerDependencies` 同时承担两件事——**解析路由**（模式 1）与**版本门禁**（模式 2）。声明了才能被路由；声明了不匹配的范围又会被 skip。所以范围必须同时满足「覆盖目标运行时」与「不误伤旧运行时」。
 
-## 5. 插件页没有配置表单（呈现层，非配置损坏）
+## 插件页没有配置表单（呈现层，非配置损坏）
 
 **症状**：插件加载正常、工具可用、Host 侧配置读写正常，但插件行**没有设置表单**、看不到任何字段。
 
@@ -55,7 +55,7 @@
 
 **修法**：补客户端组件（大改），或在文档写明替代路径（工具写入 / 行 `config:` 块）+ 开跟踪 issue。
 
-## 6. 自查探针（判断模式 5 是否成立）
+## 自查探针（判断"没有配置表单"是否成立）
 
 镜像 `dsh-settings` 的投影函数（`volatileForm` / `projectForm` / `plainConfig`）跑在插件自己的 `Config` 上，**并与一个官方 volatile 字段做对照**：
 
@@ -65,13 +65,13 @@
 
 **判定坑**：`cosmokit` 的 write 符号是**模块局部符号**（`Symbol('cosmokit.volatile.write')`），不是 `Symbol.for(...)` 注册的全局符号。用 `Symbol.for` 去 `in value` 恒为 false，会得出"未解引用"的**假根因**。正确做法是从被测值自身取符号：`Object.getOwnPropertySymbols(value).find(s => /volatile\.write/.test(String(s)))`。
 
-## 7. 入口导出形态
+## 入口导出形态
 
 **机制**：loader 的 `unwrapExports` 是 `exports.default ?? exports`。加了 `export default` 会把 `name`/`inject`/`apply` 静默丢掉。
 
 **修法**：用命名导出，不要 `export default`；把它做成静态检查项。
 
-## 8. 解析范围之外
+## 解析范围之外
 
 **机制**：`~/.dsh/.agent-presets/...` 之类的路径没有任何拦截层，harness 包永远解析不到。
 

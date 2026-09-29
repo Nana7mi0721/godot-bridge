@@ -2,7 +2,39 @@
 
 目标：用**安装版 harness 自己的代码**复现失败，而不是读源码猜。
 
-## 0. 关键事实
+## 仓库自带的两个工具：何时用
+
+两者都**不进发布包**（`files` 白名单只有 `plugin/` 与 CHANGELOG），属开发期工具。
+
+`scripts/check-plugin-contract.mjs` —— 静态契约检查：
+
+- **何时**：改了 `package.json`（`peerDependencies` / `files` / `main` / `exports` / `dsh.bundle`）、在 `plugin/` 里加了新的裸 `@deepseek-ai/*` import、提 PR 前、发版前。不需要 DSH，可进 CI。
+- **怎么用**：`npm run check`；`node scripts/check-plugin-contract.mjs --root <dir>` 校验别的目录。
+- **查什么**：裸 import 是否都已声明；`dsh.bundle.patch` 是否存在、被 `files` 覆盖、引用本包名；`main`/`exports` 目标是否存在且被 `files` 覆盖；入口是否有 `name`/`apply` 且无 `export default`。
+- **护栏自证**：对"故意去掉 peer 声明的夹具"跑一次，必须 exit 1；不失败说明检查失效（例如新写的 import 形式没被正则覆盖，多行 import 子句就不被识别）。
+
+`scripts/diagnose-dsh-resolution.mjs` —— 真机解析诊断：
+
+- **何时**：插件页报加载失败或工具整批消失；DSH 升级后巡检；排查 `link:` 与 profile 内安装的行为差异；**修复前后各跑一次做对照**。
+- **怎么用**：
+  ```sh
+  node scripts/diagnose-dsh-resolution.mjs --profile <profile> --expect ok
+  node scripts/diagnose-dsh-resolution.mjs --profile <profile> --repo <dir> --expect fail
+  node scripts/diagnose-dsh-resolution.mjs --profile web --dsh-app "<exe>" --json
+  ```
+- **注意**：**只读**（不写 profile、不建符号链接，app 开着可跑）；`--repo` 只把该目录当 linked root 加进解析表，用来复现"无 peer 声明的 linked 包"；`--expect` 不符时 exit 1，可作 CI 回归断言；**耦合 harness 未公开的内部结构，DSH 大版本升级后可能失效**——那时退回本文件的"手工最小复现"。
+
+`scripts/lib/resolution-probe-worker.mjs` —— 上面诊断脚本的 worker 半边：**不需要手工调用**，没有独立入口；拆开是因为解析拦截必须装在真正执行 import 的线程里。唯一约束是 bootstrap 必须取自 `app.asar`。
+
+**改完代码的标准收尾**：
+
+```sh
+npm run check \
+  && node scripts/diagnose-dsh-resolution.mjs --profile desktop --expect ok \
+  && node scripts/diagnose-dsh-resolution.mjs --profile web --expect ok
+```
+
+## 关键事实
 
 安装的 harness 代码在 `app.asar` 里，**只有 DSH 的 Electron 可执行文件能读**。把它当 node 用：
 
@@ -12,13 +44,9 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 & $exe -e "console.log(process.version, process.versions.electron)"
 ```
 
-非 Windows / 自定义安装位置：`--dsh-app` 传真实 exe 路径。
+非 Windows / 自定义安装位置：给脚本传 `--dsh-app <真实 exe 路径>`。
 
-## 1. 封装好的诊断（优先用）
-
-```sh
-node scripts/diagnose-dsh-resolution.mjs --profile <profile> [--expect ok|fail] [--repo <dir>] [--json]
-```
+## 诊断脚本内部做了什么
 
 它会（在非 Electron 环境下自动用 app 重新执行自己）：
 
@@ -28,7 +56,7 @@ node scripts/diagnose-dsh-resolution.mjs --profile <profile> [--expect ok|fail] 
 
 **必须用 asar 里的 bootstrap**：解包出来的副本找不到 `node-addon-require-builtin`。
 
-## 2. 手工最小复现（诊断脚本不够用时）
+## 手工最小复现（诊断脚本不够用时）
 
 ```js
 // parent：装解析 → 在 worker 里 import 目标
@@ -59,7 +87,7 @@ for (const target of workerData.targets) { /* import + 回报 ok/失败原因 */
 
 两者差异锁定在「linked root + peer 声明」上，与包是否安装、版本是否兼容无关。
 
-## 3. 读 harness 内部实现
+## 读 harness 内部实现
 
 写个 asar 解析器（读文件头 pickle + header JSON，按 offset 取文件），或用 Electron 直接 import 内部模块：
 
@@ -69,7 +97,7 @@ for (const target of workerData.targets) { /* import + 回报 ok/失败原因 */
 
 注意：Electron 的 `-e` 走 CJS，`await` 需要包在 async IIFE 里或写成 `.mjs` 文件执行。
 
-## 4. apply 级冒烟（不启动真游戏/真宿主）
+## apply 级冒烟（不启动真游戏/真宿主）
 
 用假 ctx 调真实 `apply()`：
 
@@ -92,7 +120,7 @@ await mod.apply(ctx, config)
 断言：注册的工具数量、`systemPrompt.section` 数量、各写入路径的返回值、错误路径的提示文案。
 `defineTool` 的选项形状不匹配会在这步直接抛错——比在真宿主里试快得多。
 
-## 5. 注意
+## 注意
 
 - 探针里不要把函数对象 `postMessage` 出去（`DataCloneError`）；先 JSON 序列化并替换函数。
 - 判定符号/引用身份时，**从被测对象自身取符号**（`Object.getOwnPropertySymbols`），不要用 `Symbol.for` 猜——否则会伪造出根因。
