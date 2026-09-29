@@ -24,6 +24,8 @@
 import { defineTool as defineToolOfficial } from '@deepseek-ai/dsh-tools'
 import Schema from '@deepseek-ai/schemastery'
 import { readFileSync, existsSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const name = 'godot-bridge'
@@ -168,6 +170,39 @@ export function apply(ctx, config) {
 
   const GODOT_PATH_GUIDANCE = 'No Godot engine path is available. Ask the user where their Godot executable is and persist it with the godot_set_engine_path tool, or have the user set it in settings (the plugin settings page — the `Godot engine path` field on DSH 0.2+, the `godot-bridge:` settings.yaml section on DSH 0.1.x), add `godot` to PATH, or pass the godot_path tool argument.'
 
+  // ── legacy-config migration check ───────────────────────────────────────
+  // DSH 0.2 imports a leftover settings.yaml by plugin ENTRY ID, and this
+  // plugin's row id is `tool-godot-bridge` while the 0.1.x section was named
+  // `godot-bridge` — so a path configured before the upgrade is silently NOT
+  // carried over. That matters because the fallback is `godot` on PATH, which
+  // is typically a version-manager shim: the plugin would quietly run a
+  // different engine build than the one the user configured (and its own tool
+  // docs warn against shims). So when this runtime has no configured path but a
+  // pre-0.2 section still holds one, say so once, pointing at the exact value.
+  function legacySettingsFiles() {
+    const files = []
+    try { files.push(join(homedir(), '.dsh', 'settings.yaml.imported')) } catch (e) {}
+    try { files.push(join(homedir(), '.dsh', 'settings.yaml')) } catch (e) {}
+    if (process.env.DSH_HOME) files.push(join(process.env.DSH_HOME, 'settings.yaml.imported'))
+    return files
+  }
+  function findLegacyGodotPath() {
+    for (const file of legacySettingsFiles()) {
+      if (!file || !existsSync(file)) continue
+      try {
+        // Section-style lookup: a `godot-bridge:` line followed by an indented
+        // `godotPath:` key. Avoids a YAML dependency for one optional hint.
+        const section = readFileSync(file, 'utf8').match(/^godot-bridge:[ \t]*\r?\n((?:[ \t]+.*(?:\r?\n|$))*)/m)
+        if (!section) continue
+        const value = section[1].match(/^[ \t]+godotPath:[ \t]*(.+?)[ \t]*$/m)
+        if (value && value[1].trim().length > 0) {
+          return { path: value[1].trim().replace(/^['"]|['"]$/g, ''), file }
+        }
+      } catch (e) {}
+    }
+    return null
+  }
+
   // ── update notice state (best-effort; see checkForUpdate below) ──────────
   // The installed version comes from this bundle's own package.json; the
   // "latest" version is fetched from the repo's main branch package.json.
@@ -278,7 +313,23 @@ export function apply(ctx, config) {
     } catch (e) {}
     if (configured.length > 0 && existsSync(configured)) return configured
     try {
-      return await subprocess.resolveExecutable('godot')
+      const resolved = await subprocess.resolveExecutable('godot')
+      // Warn only when the fallback actually wins and a pre-0.2 value was left
+      // behind: that combination means the user's configured engine build was
+      // silently replaced by whatever `godot` resolves to (often a shim).
+      const legacy = findLegacyGodotPath()
+      if (legacy && legacy.path !== resolved) {
+        try {
+          ctx.logger.warn(
+            '[godot-bridge] no godotPath is configured on this runtime, but '
+            + legacy.file + ' still records one: "' + legacy.path + '". '
+            + 'DSH 0.2 migrates that file by plugin entry id, and this plugin\'s row id is '
+            + '"tool-godot-bridge", so the value was not carried over. Falling back to "'
+            + resolved + '". Re-set the engine path with godot_set_engine_path to use the recorded build.',
+          )
+        } catch (e) {}
+      }
+      return resolved
     } catch (e) {}
     return null
   }

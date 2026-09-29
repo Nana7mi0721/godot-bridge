@@ -95,27 +95,63 @@ const pluginDir = join(root, 'plugin')
 if (!existsSync(pluginDir)) fail('plugin/ directory is missing')
 else collect(pluginDir)
 
-// Static forms are matched at line starts (top-level ESM imports/exports); a
-// multi-line import clause is not matched — keep those on one line.
-const STATIC_FROM = /^\s*(?:import|export)\b[^\n]*?\bfrom\s*['"]([^'"]+)['"]/
-const STATIC_SIDE_EFFECT = /^\s*import\s*['"]([^'"]+)['"]/
+// Scan whole statements rather than single lines: an import clause may wrap
+// across lines (`import {\n  a,\n} from '@scope/pkg'`), and matching line by
+// line would silently miss exactly the declaration this check exists to
+// enforce. Comments are blanked (keeping newlines so reported lines stay
+// correct) so a specifier mentioned in prose cannot produce a false positive;
+// string bodies are deliberately kept, since the specifier lives in one.
+const STATIC_FROM = /\b(?:import|export)\b[^;]*?\bfrom\s*['"]([^'"]+)['"]/g
+const STATIC_SIDE_EFFECT = /\bimport\s*['"]([^'"]+)['"]/g
 const DYNAMIC_IMPORT = /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g
 const isBare = (specifier) => !specifier.startsWith('.') && !specifier.startsWith('/') && !specifier.includes(':') && !specifier.startsWith('#')
 const packageNameOf = (specifier) => (specifier.startsWith('@') ? specifier.split('/').slice(0, 2).join('/') : specifier.split('/')[0])
+
+/** Blank out comments, preserving newlines so line numbers stay accurate. */
+function stripComments(source) {
+  let out = ''
+  let index = 0
+  while (index < source.length) {
+    const two = source.slice(index, index + 2)
+    if (two === '//') {
+      const end = source.indexOf('\n', index)
+      const stop = end === -1 ? source.length : end
+      out += ' '.repeat(stop - index)
+      index = stop
+      continue
+    }
+    if (two === '/*') {
+      const end = source.indexOf('*/', index + 2)
+      const stop = end === -1 ? source.length : end + 2
+      out += source.slice(index, stop).replace(/[^\n]/g, ' ')
+      index = stop
+      continue
+    }
+    out += source[index]
+    index++
+  }
+  return out
+}
 
 const imported = new Map()
 const record = (name, file, line) => {
   if (!imported.has(name)) imported.set(name, `${file}:${line}`)
 }
+// Report the line of the specifier itself, not of the `import` keyword: a
+// wrapped clause would otherwise be reported at its opening line.
+const lineOfSpecifier = (source, offset, specifier) => {
+  const at = source.indexOf(specifier, offset)
+  return source.slice(0, at === -1 ? offset : at).split('\n').length
+}
+
 for (const abs of sources) {
   const file = relOf(abs)
-  const text = readText(abs)
-  const lines = text.split(/\r?\n/)
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index]
-    const match = STATIC_FROM.exec(line) ?? STATIC_SIDE_EFFECT.exec(line)
-    if (match !== null && isBare(match[1])) record(packageNameOf(match[1]), file, index + 1)
-    for (const dynamic of line.matchAll(DYNAMIC_IMPORT)) if (isBare(dynamic[1])) record(packageNameOf(dynamic[1]), file, index + 1)
+  const text = stripComments(readText(abs))
+  for (const pattern of [STATIC_FROM, STATIC_SIDE_EFFECT, DYNAMIC_IMPORT]) {
+    pattern.lastIndex = 0
+    for (const match of text.matchAll(pattern)) {
+      if (isBare(match[1])) record(packageNameOf(match[1]), file, lineOfSpecifier(text, match.index, match[1]))
+    }
   }
 }
 if (imported.size === 0) fail('no package imports were found under plugin/, so the peer-declaration rule could not be verified')
