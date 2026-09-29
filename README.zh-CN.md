@@ -53,7 +53,7 @@ DSH 会话
 - DeepSeek Harness（带 host 运行时的会话）
 - 注册了 `McpInteractionServer` autoload 的 Godot 4.x 项目。若项目还没有，把 `plugin/mcp_interaction_server.gd` 复制到项目根，并以 `McpInteractionServer` 命名注册为 autoload（godot-mcp 项目已具备）。**`godot_run_project` 也会在缺失时自动安装**（把随包文件复制进 `autoload/` 并在 `project.godot` 注册）——无需手动处理；非 Godot 项目完全不受影响。
 - `node` 在 PATH 中
-- Godot 可执行文件——按此顺序解析：每次调用的 `godot_path` 参数 → **`godotPath` 插件设置**（`tool-godot-bridge` 行的配置：DSH 0.2.x 上是插件页字段，0.1.x 上是插件 settings 段）→ PATH 上的 `godot` 命令。`godot` 已在 PATH 时**无需任何配置**；否则在**设置**里填你的引擎路径（插件作者不预设路径——Godot 是便携 exe，可能位于任意位置）。务必用**真实 exe 完整路径**，不要用版本管理器的 shim（见"坑"）
+- Godot 可执行文件——按此顺序解析：每次调用的 `godot_path` 参数 → **`godotPath` 插件设置**（`tool-godot-bridge` 行的配置：DSH 0.2.x 上用 `godot_set_engine_path` 设置，0.1.x 上是插件 settings 段）→ PATH 上的 `godot` 命令。`godot` 已在 PATH 时**无需任何配置**；否则填你的引擎路径（插件作者不预设路径——Godot 是便携 exe，可能位于任意位置）。务必用**真实 exe 完整路径**，不要用版本管理器的 shim（见"坑"）
 
 ## 安装
 
@@ -91,6 +91,7 @@ DSH 0.2 用进程内的 **runtime resolution** 取代了旧的物理 module-fall
 | 17 个 `godot_*` 工具全部消失，launcher 日志出现 `ERR_MODULE_NOT_FOUND: Cannot find package '@deepseek-ai/dsh-tools' imported from …/godot-bridge.mjs` | harness 包没有被路由到安装版副本。对 `link:` 安装而言就是 `peerDependencies` 缺声明（0.1.7 及更早的失效方式） | 升级到 godot-bridge ≥ 0.1.8；或改用非符号链接安装（`dsh plugin … add ./godot-bridge-<版本>.tgz`） |
 | launcher 打印 `dsh: skipping profile bundle "godot-bridge": …`，插件页显示错误 | 声明的 DSH peer 范围与当前运行时版本不匹配。**未声明** peer 不构成约束，因此不会产生这条信息 | 升级插件；或显式接受风险：`dsh plugin --profile <profile> allow-version godot-bridge@<version> --dsh-version <runtime> --accept-risk` |
 | 插件设置页看不到 `godotPath`，且 `godot_set_engine_path` 提示 settings 服务不可用 | 在 DSH 0.2.x 上运行 0.1.8 之前的版本；旧的 `settings.register` API 已不存在 | 升级到 godot-bridge ≥ 0.1.8 |
+| 插件行**完全没有设置表单**（看不到 `Godot engine path` 字段） | 任何版本上都属预期：本插件没有客户端组件，而 DSH 0.2 只为「自行注册 keyed slot `plugins.row.config`」的插件渲染行表单 | 用 `godot_set_engine_path` 设置，或给该行加 `config:` 块（见[安装文档](install.zh-CN.md#dsh-02-上没有-gui-字段)） |
 
 ### 验证
 
@@ -125,7 +126,7 @@ godot_get_debug_output       # 读取启动日志
 godot_stop_project           # 结束
 ```
 
-Godot 可执行文件解析顺序：每次调用的 `godot_path` 参数 → `godotPath` 插件设置（`tool-godot-bridge` 行的配置：DSH 0.2.x 上是插件页字段，0.1.x 上是插件 settings 段）→ PATH 上的 `godot` 命令。`godot` 已在 PATH 时无需配置；否则在**设置**里填引擎路径，务必指向**真实 exe**，别用 shim。
+Godot 可执行文件解析顺序：每次调用的 `godot_path` 参数 → `godotPath` 插件设置（`tool-godot-bridge` 行的配置：DSH 0.2.x 上用 `godot_set_engine_path` 设置，0.1.x 上是插件 settings 段）→ PATH 上的 `godot` 命令。`godot` 已在 PATH 时无需配置；否则填引擎路径，务必指向**真实 exe**，别用 shim。
 
 ## 坑（血泪教训）
 

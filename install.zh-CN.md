@@ -59,9 +59,9 @@ dsh plugin --profile web remove godot-bridge
 
 - Godot 可执行文件：每次调用的 `godot_path` 参数 > `godotPath` 插件设置 > PATH 上的 `godot` 命令。插件作者**不预设**路径（Godot 是便携 exe，可能位于任意位置）；`godot` 不在 PATH 时，请填自己的引擎路径。始终指向**真实 exe**，别用版本管理器 shim。
 
-  `godotPath` 是插件自身配置里的 `.volatile()` 字段：它按活值读取（volatile 字段更新不需要 remount 插件），并在 DSH 0.2.x 上出现在插件设置页。取值位置：
+  `godotPath` 是插件自身配置里的 `.volatile()` 字段：按活值读取（volatile 字段更新不需要 remount 插件）。取值位置：
 
-  - **DSH 0.2.x** —— `tool-godot-bridge` 行的配置：插件页字段，或 `$DSH_HOME/profiles/<profile>/cordis.patch.yml` 里该行的 `config:` 块。`godot_set_engine_path` 经 `ctx.configEditor.edit(...)` 持久化：整体校验候选项 → 写入 profile patch → 热重组，无需重启；工具会先校验文件存在，并返回 `persisted: 'profile-patch'`。
+  - **DSH 0.2.x** —— `tool-godot-bridge` 行的配置：用 `godot_set_engine_path` 工具设置（它经 `ctx.configEditor.edit(...)` 写入 profile patch，立即生效、无需重启），或在 `$DSH_HOME/profiles/<profile>/cordis.patch.yml` 里给该行加 `config:` 块。工具会在写入前校验文件存在，并返回 `persisted: 'profile-patch'`。
 
     ```yaml
     - id: tool-godot-bridge
@@ -69,9 +69,15 @@ dsh plugin --profile web remove godot-bridge
         godotPath: C:/path/to/Godot_v4.4-stable_win64.exe
     ```
   - **DSH 0.1.6–0.1.x** —— 旧 settings 段（`$DSH_HOME/settings.yaml` 的 `godot-bridge:` 段，或该版本的插件配置页）；该 API 存在时插件仍走 `settings.register`，并返回 `persisted: 'settings'`。
-  - 0.1.x → 0.2.x 迁移：`settings.yaml` 里的 `godot-bridge:` 段**不会**被带过去。DSH 0.2 按插件 entry id 导入遗留的 `settings.yaml` 段，而本插件的行 id 是 `tool-godot-bridge`，请在插件页重新填写（或加上上面的行配置）。
+  - 0.1.x → 0.2.x 迁移：`settings.yaml` 里的 `godot-bridge:` 段**不会**被带过去。DSH 0.2 按插件 entry id 导入遗留的 `settings.yaml` 段，而本插件的行 id 是 `tool-godot-bridge`，请用工具重新设置（或加上上面的行配置）。
 - 端口/主机：写死 `127.0.0.1:9090`（与 `McpInteractionServer` autoload 默认一致）。
 - headless 脚本定位：插件按模块相对路径（`import.meta.url`）；传显式 `ops_script` / `validate_script` 参数可覆盖。
+
+## DSH 0.2 上没有 GUI 字段
+
+DSH 0.2 的插件页只为「**客户端组件**注册了 keyed slot `plugins.row.config`」的行渲染配置表单——没有任何内置包注册该插槽，因此插件必须自带客户端入口（manifest 里的 `dsh.client`）。godot-bridge 没有，所以它的行**没有设置表单**，也没有 `Godot engine path` 字段。
+
+这是呈现层缺口，不是配置损坏：Host 侧是正确的（`settings.describe()` 能为 `tool-godot-bridge` 行投影出 `godotPath`），上面两条设置路径也都可用。该缺口已单独作为功能请求跟踪。
 
 ## 维护
 

@@ -53,7 +53,7 @@ DSH session
 - DeepSeek Harness (a session with a host runtime)
 - A Godot 4.x project with the `McpInteractionServer` autoload registered. If your project does not have it yet, copy `plugin/mcp_interaction_server.gd` to the project root and register it as an autoload named `McpInteractionServer` (godot-mcp projects already have this). **`godot_run_project` also auto-installs it when missing** (copies the vendored file into `autoload/` and registers it in `project.godot`), so no manual setup is needed — and non-Godot projects are completely unaffected.
 - `node` on PATH
-- Godot executable — resolved in this order: the `godot_path` tool argument → the **`godotPath` plugin setting** (the config of the `tool-godot-bridge` row: the plugin page field on DSH 0.2.x, the plugin settings section on 0.1.x) → the `godot` command on PATH. Nothing to configure when `godot` is on PATH; otherwise set your engine path in **settings** (the plugin author does not preset it — Godot is a portable exe that can live anywhere). Use the **real exe full path**, never a version-manager shim (see Pitfalls).
+- Godot executable — resolved in this order: the `godot_path` tool argument → the **`godotPath` plugin setting** (the config of the `tool-godot-bridge` row: set it with `godot_set_engine_path` on DSH 0.2.x, the plugin settings section on 0.1.x) → the `godot` command on PATH. Nothing to configure when `godot` is on PATH; otherwise set your engine path (the plugin author does not preset it — Godot is a portable exe that can live anywhere). Use the **real exe full path**, never a version-manager shim (see Pitfalls).
 
 ## Install
 
@@ -91,6 +91,7 @@ DSH 0.2 replaced the old physical module-fallback layer with an in-process **run
 | All seventeen `godot_*` tools are missing and the launcher log shows `ERR_MODULE_NOT_FOUND: Cannot find package '@deepseek-ai/dsh-tools' imported from …/godot-bridge.mjs` | Harness packages were not routed to the installation copy. For a `link:` install this is a missing `peerDependencies` entry (the 0.1.7-and-earlier failure mode) | Update to godot-bridge ≥ 0.1.8, or install without a symlink (`dsh plugin … add ./godot-bridge-<version>.tgz`) |
 | The launcher prints `dsh: skipping profile bundle "godot-bridge": …` and the plugin page lists an error | The declared DSH peer range does not match the running runtime version. A **missing** peer imposes no constraint, so it never produces this message | Update the plugin, or accept the risk explicitly: `dsh plugin --profile <profile> allow-version godot-bridge@<version> --dsh-version <runtime> --accept-risk` |
 | `godotPath` is absent from the plugin settings page and `godot_set_engine_path` says the settings service is unavailable | A pre-0.1.8 build on DSH 0.2.x, where the legacy `settings.register` API no longer exists | Update to godot-bridge ≥ 0.1.8 |
+| The plugin row has **no settings form** at all (no `Godot engine path` field) | Expected on every build: this plugin ships no client component, and DSH 0.2 renders row forms only for plugins that register the keyed slot `plugins.row.config` themselves | Set the path with `godot_set_engine_path`, or add a `config:` block to the row (see [install](install.md#no-gui-field-on-dsh-02)) |
 
 ### Verifying
 
@@ -125,7 +126,7 @@ godot_get_debug_output       # read the boot log
 godot_stop_project           # done
 ```
 
-Godot executable resolution: per-tool `godot_path` argument → the `godotPath` plugin setting (the `tool-godot-bridge` row's config: the plugin page field on DSH 0.2.x, the plugin settings section on 0.1.x) → the `godot` command on PATH. Nothing to configure when `godot` is on PATH; otherwise set the engine path in **settings** and point at the **real exe**, never a shim.
+Godot executable resolution: per-tool `godot_path` argument → the `godotPath` plugin setting (the `tool-godot-bridge` row's config: set with `godot_set_engine_path` on DSH 0.2.x, the plugin settings section on 0.1.x) → the `godot` command on PATH. Nothing to configure when `godot` is on PATH; otherwise set the engine path and point at the **real exe**, never a shim.
 
 ## Pitfalls (learned the hard way)
 

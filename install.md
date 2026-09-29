@@ -59,9 +59,9 @@ Notes:
 
 - Godot executable: per-tool `godot_path` argument > the `godotPath` plugin setting > the `godot` command on PATH. The plugin author does **not** preset a path (Godot is a portable exe that can live anywhere); set your own engine path when it isn't on PATH. Always point at the **real exe**, never a version-manager shim.
 
-  `godotPath` is a `.volatile()` field of the plugin's own config: it is read live (volatile fields update without remounting the plugin) and it appears on the plugin's settings page on DSH 0.2.x. Where the value lives:
+  `godotPath` is a `.volatile()` field of the plugin's own config: it is read live (volatile fields update without remounting the plugin). Where the value lives:
 
-  - **DSH 0.2.x** — the config of the `tool-godot-bridge` row: the plugin page field, or a `config:` block on that row in `$DSH_HOME/profiles/<profile>/cordis.patch.yml`. `godot_set_engine_path` persists there through `ctx.configEditor.edit(...)`, which validates the whole candidate, writes the profile patch and hot-recomposes — no restart. The tool checks that the file exists before writing and reports `persisted: 'profile-patch'`.
+  - **DSH 0.2.x** — the config of the `tool-godot-bridge` row: set it with the `godot_set_engine_path` tool (it writes the profile patch through `ctx.configEditor.edit(...)` and applies immediately — no restart), or add a `config:` block on that row in `$DSH_HOME/profiles/<profile>/cordis.patch.yml`. The tool checks that the file exists before writing and reports `persisted: 'profile-patch'`.
 
     ```yaml
     - id: tool-godot-bridge
@@ -69,9 +69,15 @@ Notes:
         godotPath: C:/path/to/Godot_v4.4-stable_win64.exe
     ```
   - **DSH 0.1.6–0.1.x** — the legacy settings section (`godot-bridge:` in `$DSH_HOME/settings.yaml`, or that release's plugin-config page); the plugin still uses `settings.register` when that API exists and reports `persisted: 'settings'`.
-  - Migrating 0.1.x → 0.2.x: a `godot-bridge:` section in `settings.yaml` is **not** carried over. DSH 0.2 imports leftover `settings.yaml` sections by plugin entry id, and this plugin's row id is `tool-godot-bridge`, so re-enter the path on the plugin page (or add the row config above).
+  - Migrating 0.1.x → 0.2.x: a `godot-bridge:` section in `settings.yaml` is **not** carried over. DSH 0.2 imports leftover `settings.yaml` sections by plugin entry id, and this plugin's row id is `tool-godot-bridge`, so set the path again with the tool (or add the row config above).
 - Port/host: hardcoded `127.0.0.1:9090` (matches the `McpInteractionServer` autoload default).
 - Headless scripts: the plugin locates them relative to the module (`import.meta.url`); pass an explicit `ops_script` / `validate_script` argument to override.
+
+## No GUI field on DSH 0.2
+
+DSH 0.2's Plugins page renders a configuration form only for rows whose **client component** registers the keyed slot `plugins.row.config` — no built-in package registers it, so a plugin must ship its own client entry (`dsh.client` in its manifest). godot-bridge ships none, so its row has **no settings form** and no `Godot engine path` field.
+
+This is a presentation gap, not a broken config: the Host side is correct (`settings.describe()` projects `godotPath` for the `tool-godot-bridge` row), and the two paths above both work. Tracked separately as a feature request.
 
 ## Maintenance
 

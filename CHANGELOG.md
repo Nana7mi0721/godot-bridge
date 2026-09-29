@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - install: a `link:` local-development section, a rewritten Config section (volatile field, profile-patch write path, legacy fallback, `settings.yaml` migration note), and maintenance steps for the check and diagnostic scripts.
 - ARCHITECTURE: new "Dependency contract and runtime resolution" section with its layer diagram.
 
+### Known limitation
+
+- `godotPath` has **no GUI form field** on DSH 0.2. The Plugins page renders a row's configuration form only when that plugin ships a client component registering the keyed slot `plugins.row.config`; no built-in package registers it, and godot-bridge ships no client entry. The Host side is unaffected — `settings.describe()` still projects the field for the `tool-godot-bridge` row, and `godot_set_engine_path` (or a `config:` block on that row) sets it. Tracked as a separate feature request.
+
 ## [0.1.7] - 2026-09-07
 
 ### Fixed

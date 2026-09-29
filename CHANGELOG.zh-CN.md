@@ -30,6 +30,10 @@
 - install：新增 `link:` 本地开发一节；重写「配置」一节（volatile 字段、profile-patch 写入路径、旧运行时兜底、`settings.yaml` 迁移说明）；维护一节补上契约检查与诊断脚本。
 - ARCHITECTURE：新增「依赖契约与运行时解析」及分层示意图。
 
+### 已知限制
+
+- `godotPath` 在 DSH 0.2 上**没有 GUI 表单项**。插件页只为「自带客户端组件、注册了 keyed slot `plugins.row.config`」的插件渲染行配置表单；没有任何内置包注册该插槽，而 godot-bridge 没有客户端入口。Host 侧不受影响——`settings.describe()` 仍会为 `tool-godot-bridge` 行投影该字段，用 `godot_set_engine_path`（或该行的 `config:` 块）设置即可。该缺口单独作为功能请求跟踪。
+
 ## [0.1.7] - 2026-09-07
 
 ### 修复
