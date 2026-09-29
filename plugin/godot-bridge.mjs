@@ -81,7 +81,12 @@ export function apply(ctx, config) {
   }
   let engineWriter = null   // DSH >= 0.2: configEditor.edit -> profile patch
   let engineScope = null    // DSH 0.1.x: settings scope
+  // Read from the same source the writer targets, so a runtime offering both
+  // cannot write one place and read another. `config` is the live resolved
+  // config here (volatile fields are references, see readField), which is
+  // exactly what configEditor edits.
   function current() {
+    if (engineWriter) return config
     if (engineScope) {
       try { return engineScope.get() } catch (e) {}
     }
