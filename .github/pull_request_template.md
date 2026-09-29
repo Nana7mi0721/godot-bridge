@@ -24,18 +24,26 @@ PR 说明模板 / pull-request template.
 
 ## 验证 / Verification
 
+<!-- 只列作者能自己完成的验证。无法在本 PR 内完成的项不要留成未勾选的待办：
+     要么补做，要么在「风险与兼容性」里写清「未执行 + 原因」，作为已说明的限制。 -->
+
 - [ ] `npm run check` 通过（且对「故意去掉 peer 声明的副本」会失败）
 - [ ] `node scripts/diagnose-dsh-resolution.mjs --profile <profile> --expect ok` 全 OK
-- [ ] 重启 DSH（或插件页重载 profile）后，新会话出现预期的 `godot_*` 工具
-- [ ] 插件设置页出现/仍显示 `Godot engine path`
-- [ ] `godot_set_engine_path` 写入生效（返回 `persisted: 'profile-patch'`，无需重启）
+- [ ] 反向用例命中：`--repo <无 peer 的夹具> --expect fail`
+- [ ] apply 级冒烟：工具数量、systemPrompt section 数、两条写入路径的返回值
 - [ ] README / install / ARCHITECTURE / CHANGELOG 中英双份同步更新
 - [ ] `version` 已递增（插件启动时的更新提示以此为发布标记）
 - [ ] 工作区无未跟踪残留（`.investigate/`、临时夹具已删除）
 
+## 生效条件 / Activation
+
+<!-- 这次改动何时生效：重载 profile / 重启宿主 / 需要重新 add / 用户需迁移什么。
+     这是中性的运维事实，不是待办；不要把主语写成「维护者」「某人」，也不要用未勾选表示。 -->
+
 ## 风险与兼容性 / Risk and compatibility
 
-<!-- 声明面是否最小（只声明被 import 的包）？peer 版本范围是否会误伤旧/新运行时？是否需要用户手工动作（重载 profile、重填引擎路径）？ -->
+<!-- 声明面是否最小（只声明被 import 的包）？peer 版本范围是否会误伤旧/新运行时？
+     是否有未在本 PR 内执行的验证（例如需要重启宿主的端到端确认）——写清项与原因。 -->
 
 ## 下线计划 / Deprecation
 
