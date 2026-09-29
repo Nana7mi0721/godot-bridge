@@ -1,5 +1,5 @@
 name: Bug report / 缺陷报告
-description: 插件加载失败、工具消失、设置项缺失等问题的报告模板 / Report a plugin load failure, missing tools, or missing settings
+description: 插件加载失败、工具消失、运行时报错等问题的报告模板 / Report a plugin load failure, missing tools, or runtime errors
 title: '[Bug] '
 labels:
   - bug
@@ -15,6 +15,8 @@ body:
         ```
 
         ⚠️ 贴日志前请把凭据、token、`git remote` URL 打码。
+
+        ℹ️ 插件行没有配置表单（看不到 `Godot engine path`）**不是缺陷**，属已知限制，见 #9；设置引擎路径请用 `godot_set_engine_path` 工具或该行的 `config:` 块。
 
   - type: input
     id: dsh_version

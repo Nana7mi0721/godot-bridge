@@ -6,13 +6,13 @@ whenToUse: 用户报告 DSH 插件在 harness 升级后加载失败、工具消�
 
 # DSH 插件兼容性修复（升级后无法加载）
 
-**本技能只做问题定性 + 修复方案。** 分支、提交、Issue、PR、验收、发版一律走 [`dsh-plugin-workflow`](../dsh-plugin-workflow/SKILL.md)。
+**本技能只做问题定性 + 修复方案。** 分支、提交、Issue、PR、验收、发版，以及**对外发言的身份要求**，一律走 [`dsh-plugin-workflow`](../dsh-plugin-workflow/SKILL.md)。
 
 参考材料：
 - [`references/evidence-recipes.md`](references/evidence-recipes.md) —— asar 取证、resolution 探针、apply 冒烟的可复制配方
 - [`references/failure-patterns.md`](references/failure-patterns.md) —— 已知失败模式与对应修法
 
-## 0. 先分清三种失败
+## 0. 先分清四类失败
 
 | 症状 | 真实含义 | 位置 |
 |---|---|---|
@@ -52,7 +52,7 @@ whenToUse: 用户报告 DSH 插件在 harness 升级后加载失败、工具消�
 - [ ] apply 级冒烟：假 ctx 调 `apply()`，确认注册的工具数、prompt section 数、各写入路径返回值（`defineTool` 会在这一步暴露选项形状不匹配）
 - [ ] 真实宿主端到端：重启/重载后，新会话工具齐备、插件页无 skip、配置路径可写
 
-> 最后一项若需要 GUI 点击或重启正在使用的宿主，**先与维护者沟通由谁执行**，拿到结果再作为验收证据；不要跳过、也不要用话术替代。流程细节见 `dsh-plugin-workflow`。
+> 最后一项若需要 GUI 点击或重启正在使用的宿主，**先与仓库所有者沟通由谁执行**，拿到结果再作为验收证据；不要跳过、也不要用话术替代。流程与对外发言要求见 `dsh-plugin-workflow`。
 
 ## 4. 领域陷阱
 
