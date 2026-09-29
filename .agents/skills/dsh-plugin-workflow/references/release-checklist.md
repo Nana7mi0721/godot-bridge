@@ -40,11 +40,13 @@
 - [ ] PR 已转出 Draft，描述里的验收项全部勾选
 - [ ] 合并到 `main`，本地同步：`git checkout main && git pull`
 
-## 6. 发布（人执行）
+## 6. 发布（授权后执行）
+
+前置：所有者已明确表示可以发布。得到指示后一次跑完本节，不再逐步请示。
 
 - [ ] 打 tag：`git tag v<x.y.z> && git push origin v<x.y.z>`
 - [ ] 按发布渠道执行：`npm publish` / `dsh plugin --profile <p> add github:<owner>/<repo>` / 市场平台提交
-- [ ] 发布由人执行——agent 不自行 push tag 或发布
+- [ ] 记录每个动作的实际输出（tag 推送结果、publish 结果）；失败则报告状态与原始错误，不静默重试
 
 ## 7. 发布后核对
 
