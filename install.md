@@ -13,9 +13,9 @@ package.json                      # dsh.bundle manifest (for `dsh plugin add`)
 cordis.patch.yml                  # bundle patch layer (inserts the tool row)
 ```
 
-The plugin is a standard DSH bundle module: it imports `defineTool` from `@deepseek-ai/dsh-tools` and registers the sixteen `godot_*` tools via `ctx.tools.register`. It uses named exports (`export const name`, `export const inject`, `export function apply`) — the cordis loader's `unwrapExports` (`exports.default ?? exports`) turns the namespace into the plugin object. Do not add a stray `export default`: it would make `unwrapExports` collapse to that single value and silently drop `name`/`inject`/`apply`.
+The plugin is a standard DSH bundle module: it imports `defineTool` from `@deepseek-ai/dsh-tools` and registers the seventeen `godot_*` tools via `ctx.tools.register`. It uses named exports (`export const name`, `export const inject`, `export function apply`) — the cordis loader's `unwrapExports` (`exports.default ?? exports`) turns the namespace into the plugin object. Do not add a stray `export default`: it would make `unwrapExports` collapse to that single value and silently drop `name`/`inject`/`apply`.
 
-Because it imports `@deepseek-ai/*`, the module must live where Node can resolve the harness dependency tree — i.e. be installed through the official bundle mechanism (`dsh plugin add`), which puts the package in the profile's `node_modules` (the harness heals the shared `@deepseek-ai/*` layer there at boot). Do **not** copy the file into a user agent preset (`~/.dsh/.agent-presets/...`): Node cannot resolve `@deepseek-ai/dsh-tools` from that location.
+Because it imports `@deepseek-ai/*`, the module must resolve the harness dependency tree at load time. DSH 0.2 does that with the launcher's runtime resolution instead of a physical fallback layer: a bundle installed into `$DSH_HOME/profiles/<name>/node_modules` is routed to the installation's copies automatically, while a `link:` checkout — whose real path lies outside the profiles tree, because Node's ESM loader resolves symlinks before importing — is routed only for names the plugin declares in its own `peerDependencies`. godot-bridge ≥ 0.1.8 declares `@deepseek-ai/dsh-tools` and `@deepseek-ai/schemastery` (both `peerDependenciesMeta.optional`, so pnpm never installs harness packages from the registry). Keep that declaration when you edit the manifest — `npm run check` fails without it. Do **not** copy the file into a user agent preset (`~/.dsh/.agent-presets/...`): that location is outside every resolution scope and cannot resolve `@deepseek-ai/dsh-tools`.
 
 ## Install
 
@@ -34,13 +34,20 @@ dsh plugin --profile web add ./path/to/godot-bridge     # local checkout
 dsh plugin --profile web add ./godot-bridge-0.1.0.tgz   # pnpm pack output
 ```
 
+### Local development (`link:`)
+
+A `link:` dependency (`"godot-bridge": "link:/path/to/godot-bridge"` — what pnpm writes when you add a local checkout to the profile) turns the profile's `node_modules/godot-bridge` into a symlink to your working copy, so edits are picked up without reinstalling. It is also the one install shape the launcher's runtime resolution cannot route by itself: the plugin's real path sits outside the profiles tree, and a *linked root* gets harness packages routed only for names the plugin declares in its `peerDependencies`. That declaration is why 0.1.8 exists — without it the whole bundle fails to import (`ERR_MODULE_NOT_FOUND: Cannot find package '@deepseek-ai/dsh-tools' imported from …godot-bridge.mjs`) and none of the seventeen tools registers.
+
+- Prefer a non-symlinked install when you do not need live edits: `pnpm pack`, then `dsh plugin --profile web add ./godot-bridge-0.1.8.tgz` (reinstall after each change).
+- After changing the manifest or the plugin, reload the profile (Plugins page) or restart DSH, then confirm the seventeen tools. `npm run check` guards the contract and `scripts/diagnose-dsh-resolution.mjs` reports what the launcher actually routes — see [README → DSH 0.2+ compatibility](README.md#dsh-02-compatibility-and-troubleshooting).
+
 ## Uninstall
 
 ```sh
 dsh plugin --profile web remove godot-bridge
 ```
 
-`dsh plugin remove` forwards to `pnpm remove` in the profile directory and then reconciles `dsh.profile.bundles` — the dependency **and** the `godot-bridge` bundle layer are both removed from the profile's `package.json`. After a restart, the sixteen `godot_*` tools are gone from sessions on that profile. The `web` profile itself (the standard one) is untouched; removing a plugin never creates or deletes a profile.
+`dsh plugin remove` forwards to `pnpm remove` in the profile directory and then reconciles `dsh.profile.bundles` — the dependency **and** the `godot-bridge` bundle layer are both removed from the profile's `package.json`. After a restart, the seventeen `godot_*` tools are gone from sessions on that profile. The `web` profile itself (the standard one) is untouched; removing a plugin never creates or deletes a profile.
 
 Notes:
 
@@ -50,18 +57,27 @@ Notes:
 
 ## Config
 
-- Godot executable: per-tool `godot_path` argument > the `godotPath` setting (the Web plugin-config page, or the `godot-bridge:` section of `settings.yaml`) > the `godot` command on PATH. The plugin author does **not** preset a path (Godot is a portable exe that can live anywhere); set your own engine path in settings when it isn't on PATH. Always point at the **real exe**, never a version-manager shim. Example `settings.yaml`:
+- Godot executable: per-tool `godot_path` argument > the `godotPath` plugin setting > the `godot` command on PATH. The plugin author does **not** preset a path (Godot is a portable exe that can live anywhere); set your own engine path when it isn't on PATH. Always point at the **real exe**, never a version-manager shim.
 
-  ```yaml
-  godot-bridge:
-    godotPath: C:/path/to/Godot_v4.4-stable_win64.exe
-  ```
+  `godotPath` is a `.volatile()` field of the plugin's own config: it is read live (volatile fields update without remounting the plugin) and it appears on the plugin's settings page on DSH 0.2.x. Where the value lives:
+
+  - **DSH 0.2.x** — the config of the `tool-godot-bridge` row: the plugin page field, or a `config:` block on that row in `$DSH_HOME/profiles/<profile>/cordis.patch.yml`. `godot_set_engine_path` persists there through `ctx.configEditor.edit(...)`, which validates the whole candidate, writes the profile patch and hot-recomposes — no restart. The tool checks that the file exists before writing and reports `persisted: 'profile-patch'`.
+
+    ```yaml
+    - id: tool-godot-bridge
+      config:
+        godotPath: C:/path/to/Godot_v4.4-stable_win64.exe
+    ```
+  - **DSH 0.1.6–0.1.x** — the legacy settings section (`godot-bridge:` in `$DSH_HOME/settings.yaml`, or that release's plugin-config page); the plugin still uses `settings.register` when that API exists and reports `persisted: 'settings'`.
+  - Migrating 0.1.x → 0.2.x: a `godot-bridge:` section in `settings.yaml` is **not** carried over. DSH 0.2 imports leftover `settings.yaml` sections by plugin entry id, and this plugin's row id is `tool-godot-bridge`, so re-enter the path on the plugin page (or add the row config above).
 - Port/host: hardcoded `127.0.0.1:9090` (matches the `McpInteractionServer` autoload default).
 - Headless scripts: the plugin locates them relative to the module (`import.meta.url`); pass an explicit `ops_script` / `validate_script` argument to override.
 
 ## Maintenance
 
 - Editing `plugin/godot-bridge.mjs` needs no rebuild (plain ESM).
-- After changing the plugin, reinstall it into the profile (`dsh plugin --profile web add github:Smalldy/godot-bridge` again) and restart the session.
+- After changing the plugin, reinstall it into the profile (`dsh plugin --profile web add github:Smalldy/godot-bridge` again) and restart the session. A `link:` install needs no reinstall — reload the profile (Plugins page) or restart DSH.
+- Before committing or publishing, run `npm run check` (static dependency contract: declared `@deepseek-ai/*` peers, bundle patch, entry exports). `node scripts/diagnose-dsh-resolution.mjs --profile <profile>` re-runs the launcher's resolution and prints what it routes (development only; needs the installed DSH app).
+- The manifest's `peerDependencies` change what DSH may load: a declared `@deepseek-ai/dsh-*` range that does not match the running runtime makes DSH skip the bundle with an explicit message instead of failing at import.
 - **Publishing an update**: bump `version` in `package.json` and push — the plugin's boot-time check (see README "Update notices") uses that version as the release marker, so existing installs only see a notice when it is higher than what they have.
 - The game side (`mcp_interaction_server.gd` autoload) is never modified by the plugin.

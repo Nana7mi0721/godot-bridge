@@ -5,6 +5,31 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.1.8] - 2026-09-30
+
+### 修复
+
+- 以 `link:` 依赖安装时，插件在 DSH 0.2.x 上完全无法加载：launcher 的 runtime resolution 只对「linked 包在自己 `peerDependencies` 里声明过的名字」把 `@deepseek-ai/*` 路由到安装版（它读的是 `peerDependencies` 的键，不是 `dependencies`），而 godot-bridge 一个都没声明——于是 `import '@deepseek-ai/dsh-tools'` 报 `ERR_MODULE_NOT_FOUND`，17 个 `godot_*` 工具一个都没注册。manifest 现在声明 `@deepseek-ai/dsh-tools` 与 `@deepseek-ai/schemastery`。
+- `godotPath` 在 DSH 0.2.x 上不再消失：`@deepseek-ai/dsh-settings` 移除了 `register`，settings 段此前只会静默降级成一条告警，`godot_set_engine_path` 永远回答 settings 服务不可用。
+
+### 变更
+
+- 配置模型：`godotPath` 改为插件 Config 的 `.volatile()` 字段，因此会出现在插件设置页，并按活值读取（volatile 字段原地更新，不 remount 插件）。写入经 `ctx.configEditor.edit(...)` 持久化到 active profile 的 `cordis.patch.yml` 并热重组——无需重启。
+- `godot_set_engine_path` 写前校验目标文件是否存在，并回报持久化去向：DSH 0.2.x 上为 `persisted: 'profile-patch'`，旧路径为 `'settings'`。
+- 继续兼容旧运行时：0.1.6–0.1.x 上 `settings.register` 仍然存在时插件继续使用它（声明范围为 `>=0.1.6-0`）。`peerDependenciesMeta.optional` 阻止 pnpm 去 registry 安装 harness 包。
+- `settings.yaml` 迁移说明：DSH 0.2 按插件 entry id 导入遗留段，而本插件的行 id 是 `tool-godot-bridge`，所以 0.1.x 写下的 `godot-bridge:` 段不会被带过来——请在插件页重新填写。
+
+### 新增
+
+- `npm run check` —— `scripts/check-plugin-contract.mjs`：零依赖静态契约检查。裸 `@deepseek-ai/*` import 必须在 `peerDependencies`/`dependencies` 中声明；`dsh.bundle.patch` 必须存在且引用本包；`main`/`exports` 目标文件必须存在且被 `files` 覆盖；入口必须导出 `name`/`apply` 且没有 `export default`。
+- `scripts/diagnose-dsh-resolution.mjs` —— 可重跑的 launcher runtime resolution 诊断（bundle 层、被 skip 的 bundle、linked root、每个 import 的解析结果，支持 `--expect ok|fail`）；仅开发用，不发布。
+
+### 文档
+
+- README：新增「DSH 0.2+ 兼容性与故障排查」（解析规则、`link:` 的 peer 要求、症状对照表、`dsh plugin allow-version` 应急、验证命令），并修正配置位置的表述。
+- install：新增 `link:` 本地开发一节；重写「配置」一节（volatile 字段、profile-patch 写入路径、旧运行时兜底、`settings.yaml` 迁移说明）；维护一节补上契约检查与诊断脚本。
+- ARCHITECTURE：新增「依赖契约与运行时解析」及分层示意图。
+
 ## [0.1.7] - 2026-09-07
 
 ### 修复
@@ -107,6 +132,7 @@
 - `godot_manage_input_map` 使用正确的 Godot 4 键码（修复 godot-mcp 的 Godot 3 基线 bug）。
 - 双语文档（README / install / ARCHITECTURE / COVERAGE），含安装与移除指南；`cordis.patch.yml` 纳入发布 `files`。
 
+[0.1.8]: https://github.com/Smalldy/godot-bridge/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/Smalldy/godot-bridge/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/Smalldy/godot-bridge/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/Smalldy/godot-bridge/compare/v0.1.4...v0.1.5

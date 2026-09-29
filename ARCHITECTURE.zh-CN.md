@@ -40,6 +40,30 @@ godot-bridge 走 harness 的**原始 `subprocess` 服务**——shell 执行器�
 
 所有工具原样返回游戏的 JSON 响应（规范化值按 `{type:'object', additionalProperties:true}` 校验），以文本渲染。工具调用默认排他（无 `isConcurrencySafe`），与单命令游戏服务器匹配。
 
+## 依赖契约与运行时解析
+
+要 import harness 包（`@deepseek-ai/dsh-tools`、`@deepseek-ai/schemastery` 等）的 DSH 插件，从不从 npm registry 解析这些包。launcher 会计算一份不可变的 **runtime resolution**——安装版自身的依赖闭包 + 已选 bundle——并把它装进 Node 的 ESM 与 CommonJS 解析器（DSH 0.2 是进程内实现，取代了 0.1.x 的物理 module-fallback 层；旧的 `.dsh-module-fallback` 目录只保留清理逻辑）。哪些模块能拿到这种路由，按「发起 import 的路径」决定：
+
+- **在 profiles 树内**（`$DSH_HOME/profiles/<name>/…`）：profile 层的 importer 对安装版携带的任意 `@deepseek-ai/*` 包都会被路由到安装版副本。用 `dsh plugin add` 装进来的 bundle 就在这里，因此无需任何声明。
+- **linked root**（profile 的 `node_modules` 下、目标落在 profiles 树之外的符号链接——`link:` 依赖的产物）：只有在「发起 import 的包」自己的 `peerDependencies` 里声明了该包名时才会被路由。解析器读的是 `peerDependencies` 的键（不是 `dependencies`），而 Node 的 ESM loader 会先 realpath 再 import，所以 importer 路径确实是树外的真实目标路径。
+- **其他位置**（树外且非 linked root，例如被复制进 agent 预设的文件）：完全没有路由——走原生 Node 查找，看不到安装版的包。
+
+由此有两条约束塑造了本包的 manifest：
+
+- `peerDependencies` 是**加载期契约**，不只是元数据：缺声明时 `link:` 安装会让整个 bundle import 失败（`ERR_MODULE_NOT_FOUND: Cannot find package '@deepseek-ai/dsh-tools'`），17 个工具一个都不注册——这就是 0.1.7 及更早版本在 DSH 0.2 上的表现。
+- DSH 还会用运行时版本**门禁**已声明的 `@deepseek-ai/dsh` / `@deepseek-ai/dsh-*` peers（预发布版本参与范围匹配）。范围不匹配时 launcher 会带明确信息 skip 该 bundle；而**未声明** peer 不构成约束，因此永远不可能导致 skip。这就是为什么声明用范围（`>=0.1.6-0`）而不是精确锁定，也是为什么用 `peerDependenciesMeta.optional` 标注这些 harness 包：pnpm 绝不能去 registry 拉它们。
+
+```mermaid
+flowchart LR
+    L["dsh launcher"] --> R["runtime resolution<br/>ESM + CJS 解析器钩子"]
+    R -->|"importer 在 profiles 树内"| I["安装版副本<br/>@deepseek-ai/*"]
+    R -->|"linked root + peerDependencies 键"| I
+    R -->|"linked root 但未声明该包名"| N["原生 Node 查找<br/>→ ERR_MODULE_NOT_FOUND"]
+    R -->|"不在任何范围内"| N
+```
+
+`npm run check` 静态守护这份声明；`scripts/diagnose-dsh-resolution.mjs` 打印运行中的 launcher 实际路由了什么。
+
 ## 架构图
 
 ### 系统总览
@@ -54,7 +78,7 @@ flowchart TB
         PROFILE["$DSH_HOME/profiles/web/package.json<br/>dsh.profile.bundles = base · web-app · godot-bridge"]
         NODE["profiles/web/node_modules/godot-bridge"]
         PLUGIN["cordis 行 tool-godot-bridge<br/>godot-bridge.mjs apply(ctx)"]
-        TOOLS["16 个 godot_* 工具<br/>defineTool + ctx.tools.register"]
+        TOOLS["17 个 godot_* 工具<br/>defineTool + ctx.tools.register"]
         PROMPT["系统提示 section<br/>更新提示（条件触发）"]
     end
 
