@@ -31,7 +31,7 @@ dsh plugin --profile web add github:Smalldy/godot-bridge
 
 ```sh
 dsh plugin --profile web add ./path/to/godot-bridge     # 本地 checkout
-dsh plugin --profile web add ./godot-bridge-0.1.0.tgz   # pnpm pack 产物
+dsh plugin --profile web add ./godot-bridge-0.1.8.tgz   # pnpm pack 产物
 ```
 
 ### 本地开发（`link:`）

@@ -64,7 +64,7 @@ body:
       label: 现象 / Symptom
       description: 哪些 `godot_*` 工具不见了、插件页显示了什么、launcher 日志里的完整报错行。
       placeholder: |
-        16 个 godot_* 工具全部消失；launcher 打印：
+        17 个 godot_* 工具全部消失；launcher 打印：
         dsh: skipping profile bundle "godot-bridge": … / ERR_MODULE_NOT_FOUND …
     validations:
       required: true

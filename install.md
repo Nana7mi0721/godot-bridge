@@ -25,13 +25,13 @@ Because it imports `@deepseek-ai/*`, the module must resolve the harness depende
 dsh plugin --profile web add github:Smalldy/godot-bridge
 ```
 
-`dsh plugin` is a pnpm forwarder: it installs the package into the profile and — because the package's `dsh.bundle` manifest points at `cordis.patch.yml`, which inserts the `tool-godot-bridge` row (referenced by package name) — appends `godot-bridge` to the profile's `dsh.profile.bundles` layer list. Pure ESM + assets, no build script, so a git install needs no `allowBuilds` exemption. After a restart, every session on that profile has the sixteen tools.
+`dsh plugin` is a pnpm forwarder: it installs the package into the profile and — because the package's `dsh.bundle` manifest points at `cordis.patch.yml`, which inserts the `tool-godot-bridge` row (referenced by package name) — appends `godot-bridge` to the profile's `dsh.profile.bundles` layer list. Pure ESM + assets, no build script, so a git install needs no `allowBuilds` exemption. After a restart, every session on that profile has the seventeen tools.
 
 The same command installs a local checkout or a tarball:
 
 ```sh
 dsh plugin --profile web add ./path/to/godot-bridge     # local checkout
-dsh plugin --profile web add ./godot-bridge-0.1.0.tgz   # pnpm pack output
+dsh plugin --profile web add ./godot-bridge-0.1.8.tgz   # pnpm pack output
 ```
 
 ### Local development (`link:`)
