@@ -79,6 +79,7 @@ export function apply(ctx, config) {
   function readField(value) {
     return value && typeof value.get === 'function' ? value.get() : value
   }
+  let migrationAttempted = false
   let engineWriter = null   // DSH >= 0.2: configEditor.edit -> profile patch
   let engineScope = null    // DSH 0.1.x: settings scope
   // Read from the same source the writer targets, so a runtime offering both
@@ -108,6 +109,9 @@ export function apply(ctx, config) {
           return Object.assign({}, previous, { godotPath: p })
         })
       }
+      // Runs after engineWriter is set, so the restore goes through the same
+      // writer (and the same profile-patch path) as an explicit tool call.
+      restoreLegacyGodotPath()
     } catch (e) {
       try { ctx.logger.warn('[godot-bridge] configEditor wiring skipped: ' + String((e && e.message) || e)) } catch (e2) {}
     }
@@ -175,15 +179,17 @@ export function apply(ctx, config) {
 
   const GODOT_PATH_GUIDANCE = 'No Godot engine path is available. Ask the user where their Godot executable is and persist it with the godot_set_engine_path tool, or have the user set it in settings (the plugin settings page — the `Godot engine path` field on DSH 0.2+, the `godot-bridge:` settings.yaml section on DSH 0.1.x), add `godot` to PATH, or pass the godot_path tool argument.'
 
-  // ── legacy-config migration check ───────────────────────────────────────
+  // ── legacy-config migration ─────────────────────────────────────────────
   // DSH 0.2 imports a leftover settings.yaml by plugin ENTRY ID, and this
   // plugin's row id is `tool-godot-bridge` while the 0.1.x section was named
   // `godot-bridge` — so a path configured before the upgrade is silently NOT
   // carried over. That matters because the fallback is `godot` on PATH, which
-  // is typically a version-manager shim: the plugin would quietly run a
-  // different engine build than the one the user configured (and its own tool
-  // docs warn against shims). So when this runtime has no configured path but a
-  // pre-0.2 section still holds one, say so once, pointing at the exact value.
+  // is typically a version-manager shim (this plugin's own tool docs warn
+  // against shims): the plugin would quietly run a different engine build than
+  // the one the user configured. So the recorded value is read here and written
+  // back into the runtime that actually owns the setting — see
+  // restoreLegacyGodotPath below, plus the warning in resolveGodotPath for the
+  // case where the restore could not be performed.
   function legacySettingsFiles() {
     const files = []
     try { files.push(join(homedir(), '.dsh', 'settings.yaml.imported')) } catch (e) {}
@@ -206,6 +212,42 @@ export function apply(ctx, config) {
       } catch (e) {}
     }
     return null
+  }
+
+  // One-shot repair of the drop described above: when this runtime has no
+  // configured path and a pre-0.2 file still records one, write it back through
+  // the same writer godot_set_engine_path uses, so the value is restored where
+  // this runtime actually reads it (and, through the profile-patch write path,
+  // takes effect without a restart). Only ever fills an EMPTY field: an
+  // explicit runtime value is the user's current intent and is never replaced
+  // by a stale file. Best-effort: a rejected write leaves the PATH fallback
+  // (plus the warning in resolveGodotPath) exactly as before.
+  async function restoreLegacyGodotPath() {
+    if (migrationAttempted) return
+    migrationAttempted = true
+    try {
+      const c = current()
+      const raw = c ? readField(c.godotPath) : ''
+      if (typeof raw === 'string' && raw.trim().length > 0) return
+      const legacy = findLegacyGodotPath()
+      if (!legacy || !legacy.path || !existsSync(legacy.path)) return
+      if (!engineWriter) return
+      await engineWriter(legacy.path)
+      try {
+        ctx.logger.info(
+          '[godot-bridge] restored the engine path recorded in ' + legacy.file
+          + ' ("' + legacy.path + '"): DSH 0.2 migrates that file by plugin entry id '
+          + 'and this plugin\'s row id is "tool-godot-bridge", so the value was not carried over.',
+        )
+      } catch (e) {}
+    } catch (e) {
+      try {
+        ctx.logger.warn(
+          '[godot-bridge] could not restore the pre-0.2 engine path; run godot_set_engine_path to set it. '
+          + String((e && e.message) || e),
+        )
+      } catch (e2) {}
+    }
   }
 
   // ── update notice state (best-effort; see checkForUpdate below) ──────────

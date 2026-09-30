@@ -11,13 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The plugin could not load at all on DSH 0.2.x when installed as a `link:` dependency: the launcher's runtime resolution routes `@deepseek-ai/*` to the installation only for names a linked package declares in its own `peerDependencies` (it reads `peerDependencies` keys, not `dependencies`), and godot-bridge declared none — so `import '@deepseek-ai/dsh-tools'` failed with `ERR_MODULE_NOT_FOUND` and none of the seventeen `godot_*` tools registered. The manifest now declares `@deepseek-ai/dsh-tools` and `@deepseek-ai/schemastery`.
 - `godotPath` no longer disappears on DSH 0.2.x: `@deepseek-ai/dsh-settings` dropped `register`, so the settings section silently degraded to a warning and `godot_set_engine_path` always answered that the settings service was unavailable.
+- An engine path configured before the 0.1.x → 0.2.x upgrade is carried over automatically instead of silently falling back to `godot` on PATH (typically a version-manager shim, i.e. a different build than the one configured). See the migration note under **Changed**.
 
 ### Changed
 
 - Configuration model: `godotPath` is a `.volatile()` field of the plugin's Config, so it appears on the plugin settings page and is read live (volatile fields are updated in place, without remounting the plugin). Writes persist through `ctx.configEditor.edit(...)` into the active profile's `cordis.patch.yml` and hot-recompose — no restart.
 - `godot_set_engine_path` now checks that the target exists before writing and reports where it persisted: `persisted: 'profile-patch'` on DSH 0.2.x, `'settings'` on the legacy path.
 - Legacy runtimes stay supported: on 0.1.6–0.1.x, where `settings.register` still exists, the plugin keeps using it (the declared peer range is `>=0.1.6-0`). `peerDependenciesMeta.optional` keeps pnpm from installing harness packages from the registry.
-- `settings.yaml` migration note: DSH 0.2 imports leftover sections by plugin entry id, and this plugin's row id is `tool-godot-bridge`, so a `godot-bridge:` section written on 0.1.x is not carried over — re-enter the path on the plugin page.
+- `settings.yaml` migration: DSH 0.2 imports leftover sections by plugin entry id, and this plugin's row id is `tool-godot-bridge`, so a `godot-bridge:` section written on 0.1.x is not carried over. When this runtime has no configured path, the plugin now reads that section and writes the recorded value back through the same profile-patch path as `godot_set_engine_path`, so the engine build configured before the upgrade is used again without re-entering it. An already-configured value is never overwritten, and a recorded path that no longer exists on disk is ignored (that case keeps the PATH fallback and its warning).
 
 ### Added
 

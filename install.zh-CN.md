@@ -69,7 +69,7 @@ dsh plugin --profile web remove godot-bridge
         godotPath: C:/path/to/Godot_v4.4-stable_win64.exe
     ```
   - **DSH 0.1.6–0.1.x** —— 旧 settings 段（`$DSH_HOME/settings.yaml` 的 `godot-bridge:` 段，或该版本的插件配置页）；该 API 存在时插件仍走 `settings.register`，并返回 `persisted: 'settings'`。
-  - 0.1.x → 0.2.x 迁移：`settings.yaml` 里的 `godot-bridge:` 段**不会**被带过去。DSH 0.2 按插件 entry id 导入遗留的 `settings.yaml` 段，而本插件的行 id 是 `tool-godot-bridge`，请用工具重新设置（或加上上面的行配置）。
+  - 0.1.x → 0.2.x 迁移：`settings.yaml` 里的 `godot-bridge:` 段**不会**被带过去，因为 DSH 0.2 按插件 entry id 导入遗留段，而本插件的行 id 是 `tool-godot-bridge`。但不需要你重新填写：当当前运行时没有配置路径时，插件会读取该段，并把其中的值经与工具相同的 profile-patch 写入路径写回，升级前配置的引擎构建即可继续使用。已配置的值永远不会被覆盖；记录在磁盘上已不存在的路径会被忽略——这种情况仍保留 PATH 上 `godot` 的兜底，并打印一条点名丢失值的告警。
 - 端口/主机：写死 `127.0.0.1:9090`（与 `McpInteractionServer` autoload 默认一致）。
 - headless 脚本定位：插件按模块相对路径（`import.meta.url`）；传显式 `ops_script` / `validate_script` 参数可覆盖。
 

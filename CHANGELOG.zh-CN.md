@@ -11,13 +11,14 @@
 
 - 以 `link:` 依赖安装时，插件在 DSH 0.2.x 上完全无法加载：launcher 的 runtime resolution 只对「linked 包在自己 `peerDependencies` 里声明过的名字」把 `@deepseek-ai/*` 路由到安装版（它读的是 `peerDependencies` 的键，不是 `dependencies`），而 godot-bridge 一个都没声明——于是 `import '@deepseek-ai/dsh-tools'` 报 `ERR_MODULE_NOT_FOUND`，17 个 `godot_*` 工具一个都没注册。manifest 现在声明 `@deepseek-ai/dsh-tools` 与 `@deepseek-ai/schemastery`。
 - `godotPath` 在 DSH 0.2.x 上不再消失：`@deepseek-ai/dsh-settings` 移除了 `register`，settings 段此前只会静默降级成一条告警，`godot_set_engine_path` 永远回答 settings 服务不可用。
+- 在 0.1.x → 0.2.x 升级前配置过的引擎路径会被自动带过来，而不是静默回落到 PATH 上的 `godot`（那通常是版本管理器 shim，也就是与用户当初配置不同的构建）。见「变更」中的迁移说明。
 
 ### 变更
 
 - 配置模型：`godotPath` 改为插件 Config 的 `.volatile()` 字段，因此会出现在插件设置页，并按活值读取（volatile 字段原地更新，不 remount 插件）。写入经 `ctx.configEditor.edit(...)` 持久化到 active profile 的 `cordis.patch.yml` 并热重组——无需重启。
 - `godot_set_engine_path` 写前校验目标文件是否存在，并回报持久化去向：DSH 0.2.x 上为 `persisted: 'profile-patch'`，旧路径为 `'settings'`。
 - 继续兼容旧运行时：0.1.6–0.1.x 上 `settings.register` 仍然存在时插件继续使用它（声明范围为 `>=0.1.6-0`）。`peerDependenciesMeta.optional` 阻止 pnpm 去 registry 安装 harness 包。
-- `settings.yaml` 迁移说明：DSH 0.2 按插件 entry id 导入遗留段，而本插件的行 id 是 `tool-godot-bridge`，所以 0.1.x 写下的 `godot-bridge:` 段不会被带过来——请在插件页重新填写。
+- `settings.yaml` 迁移：DSH 0.2 按插件 entry id 导入遗留段，而本插件的行 id 是 `tool-godot-bridge`，所以 0.1.x 写下的 `godot-bridge:` 段不会被带过来。当当前运行时没有配置路径时，插件会读取该段并把其中的值经与 `godot_set_engine_path` 相同的 profile-patch 写入路径写回，因此升级前配置的引擎构建无需重新填写即可继续使用。已配置的值永远不会被覆盖；记录在磁盘上已不存在的路径会被忽略（这种情况仍保留 PATH 兜底与对应告警）。
 
 ### 新增
 

@@ -69,7 +69,7 @@ Notes:
         godotPath: C:/path/to/Godot_v4.4-stable_win64.exe
     ```
   - **DSH 0.1.6–0.1.x** — the legacy settings section (`godot-bridge:` in `$DSH_HOME/settings.yaml`, or that release's plugin-config page); the plugin still uses `settings.register` when that API exists and reports `persisted: 'settings'`.
-  - Migrating 0.1.x → 0.2.x: a `godot-bridge:` section in `settings.yaml` is **not** carried over. DSH 0.2 imports leftover `settings.yaml` sections by plugin entry id, and this plugin's row id is `tool-godot-bridge`, so set the path again with the tool (or add the row config above).
+  - Migrating 0.1.x → 0.2.x: a `godot-bridge:` section in `settings.yaml` is **not** carried over, because DSH 0.2 imports leftover sections by plugin entry id and this plugin's row id is `tool-godot-bridge`. You do not have to re-enter it: when this runtime has no configured path, the plugin reads that section and writes the recorded value back through the same profile-patch path as the tool, so the engine build configured before the upgrade is used again. An already-configured value is never overwritten, and a recorded path that no longer exists on disk is ignored — that case keeps the `godot` on PATH fallback and logs a warning naming the dropped value.
 - Port/host: hardcoded `127.0.0.1:9090` (matches the `McpInteractionServer` autoload default).
 - Headless scripts: the plugin locates them relative to the module (`import.meta.url`); pass an explicit `ops_script` / `validate_script` argument to override.
 

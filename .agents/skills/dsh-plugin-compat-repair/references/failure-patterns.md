@@ -35,7 +35,24 @@
 
 **修法**：双栈 + 单一入口——`ctx.inject(['configEditor'], …)` 装新 writer，`ctx.inject(['settings'], …)` 仅在 `typeof settings.register === 'function'` 时装旧 scope；两者共用一个"取活值"函数，避免行为分叉。
 
+## 遗留配置静默丢失 → 静默换用另一个引擎/依赖
+
+**症状**：升级后插件照常工作，但用的是**别的**目标——例如本插件回落到 PATH 上的版本管理器 shim，指向与用户配置不同的引擎构建。日志里没有错误。
+
+**机制**：0.2 把遗留 `settings.yaml` 按**插件 entry id** 迁移（`settings` 服务的 `write(ns)` → `configEditor.entries().find(row => row.options.id === ns)`）。0.1.x 的段名是包名，0.2 的行 id 来自 `cordis.patch.yml` 的 insert 行（如 `tool-godot-bridge`），**两者通常不相等** → 迁移抛 `No configurable plugin entry "<ns>"` 并被 catch 吞掉，段只留在 `settings.yaml.imported` 里。
+
+**修法**：`apply` 期做**一次性还原**，而不是只发告警——检测本行该字段为空且旧段有值，就经 `ctx.configEditor.edit(...)` 写回同一份 profile patch。三条边界必须同时满足：
+
+- **只填空值**：旧文件是"丢失后的还原来源"，不是"当前意图"，已配置的值永不覆盖；
+- **值必须先在磁盘上存在**（`existsSync`），否则忽略——写入悬空路径会把兜底回退变成硬失败；
+- **失败可容忍**：写入被拒时退化为原兜底 + 一条点名值与来源文件的告警。
+
+`configEditor.edit` 写完会调 `reconcileProfilePatches`，所以还原**不需要重启**。
+
+**探针坑（会伪造结论）**：要隔离 `~/.dsh` 时，`homedir()` 在 Windows 上读的是 OS 账户，**给 Worker 传 `env: { USERPROFILE }` 不生效**（进程已启动）。结果是探针偷偷读到操作者真实的遗留文件，让每个负例都"通过"。隔离不了就退一步：**用单元级断言直接验证守卫条件**（读源码断言各 `return` 分支存在），别把受污染的负例当证据。
+
 ## 版本门禁的兼容性 vs 运行时的兼容性
+
 
 **要点**：`peerDependencies` 同时承担两件事——**解析路由**（模式 1）与**版本门禁**（模式 2）。声明了才能被路由；声明了不匹配的范围又会被 skip。所以范围必须同时满足「覆盖目标运行时」与「不误伤旧运行时」。
 

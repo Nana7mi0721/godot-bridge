@@ -24,9 +24,7 @@
   node scripts/diagnose-dsh-resolution.mjs --profile web --dsh-app "<exe>" --json
   ```
 - **注意**：**只读**（不写 profile、不建符号链接，app 开着可跑）；`--expect` 不符时 exit 1，可作 CI 回归断言；**耦合 harness 未公开的内部结构，DSH 大版本升级后可能失效**——那时退回本文件的"手工最小复现"。
-- **`--repo` 的能力边界（重要）**：它是**合成** linked root——直接把 `{name, realPath}` 注入解析表的 `linkedRoots`，**不经过 harness 真实的 `routeLinked` 祖先门禁**。因此它能稳定复现"未声明的 linked 包 import 失败"，但**不能**用来验证门禁本身（例如"声明了 peer 才会被路由"）。后者要按"手工最小复现"在真实布局下做。
-
-  > 为什么这个区别要紧：`routeLinked`（`dsh-app-boot` 的 `lib/index.js` / worker bootstrap 同款）取的祖先集合是 `nodeModulePaths(dirname(parent))`，再读每个搜索路径**父目录**的 `package.json` 的 peer 键（L361-366）。所以夹具若放在一个已声明 peers 的包**内部**，门禁可能被祖先 manifest 满足，得到与预期相反的假结果。做真机对照时，把夹具放在**任何插件 manifest 之外**（例如系统临时目录），并核对祖先链上没有别的 manifest。
+- **`--repo` 的能力边界**：它**合成** linked root（直接注入解析表的 `linkedRoots`），**不经过** harness 真实的 `routeLinked` 祖先门禁。适合稳定复现"未声明的 linked 包 import 失败"；要验证门禁本身，按"手工最小复现"在真实布局下做，并把夹具放在**任何插件 manifest 之外**。
 
 `scripts/lib/resolution-probe-worker.mjs` —— 上面诊断脚本的 worker 半边：**不需要手工调用**，没有独立入口；拆开是因为解析拦截必须装在真正执行 import 的线程里。唯一约束是 bootstrap 必须取自 `app.asar`。
 
