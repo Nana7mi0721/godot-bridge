@@ -16,11 +16,12 @@ No MCP protocol, no Python server, no editor addon. The game side is untouched: 
 | `godot_run_project` | `run_project` | Launch the project in debug mode (`godot -d --path …`), wait for port 9090 |
 | `godot_stop_project` | `stop_project` | Terminate the game process (tree-scoped kill) |
 | `godot_get_debug_output` | `get_debug_output` | Incremental stdout/stderr of the launched process |
-| `godot_command` | all `game_*` (~130) | Send any interaction-server command: `get_scene_tree`, `get_ui_elements`, `eval`, `get/set_property`, `call_method`, `click`, `key_press`, `screenshot`, `raycast`, `serialize_state`, `ui_*`, … |
+| `godot_command` | all `game_*` (~105) | Send any interaction-server command: `get_scene_tree`, `get_ui_elements`, `eval`, `get/set_property`, `call_method`, `click`, `key_press`, `screenshot`, `raycast`, `serialize_state`, `ui_*`, … |
 | `godot_screenshot` | `game_screenshot` | Viewport capture as base64 PNG |
 | `godot_ping` | — | Probe whether the game answers on 9090 (also reports installed/latest plugin version) |
-| `godot_set_engine_path` | — | Persist the Godot engine executable path into settings (the model asks the user for it, then saves it here; hot-reloaded) |
+| `godot_set_engine_path` | — | Persist the Godot engine executable path into the plugin's config (the model asks the user for it, then saves it here; hot-reloaded — reports `persisted: 'profile-patch'` on DSH 0.2.x, `'settings'` on the legacy path) |
 | `godot_headless_op` | `read_scene`, `modify_scene_node`, `remove_scene_node`, `attach_script`, `create_resource`, `save_scene`, `create_scene`, `add_node`, `get_uid`, `manage_scene_signals`, … | Headless static operations (`godot --headless --script godot_operations.gd`): 16 ops, no running game needed |
+| `godot_run_headless` | — | Bounded **non-interactive** run of the project, a scene, or a test script (`godot --headless --path … [--quit-after N] [--script …]`) through the unconfined subprocess service; returns stdout/stderr and flags a sandbox-crash diagnosis |
 | `godot_validate_script` | `validate_script` | Headless GDScript compile-check via `validate_script.gd` → `{valid, errors}` |
 | `godot_set_project_setting` | `modify_project_settings`, `set_main_scene`, `manage_layers`, `manage_plugins`, `manage_translations` | Set a typed key in any project.godot section (`PackedStringArray(...)` / `Vector2i(...)` / bool / …) |
 | `godot_manage_autoloads` | `manage_autoloads` | List / add / remove autoload singletons (`Name="*res://…"`) |
@@ -53,7 +54,7 @@ DSH session
 - DeepSeek Harness (a session with a host runtime)
 - A Godot 4.x project with the `McpInteractionServer` autoload registered. If your project does not have it yet, copy `plugin/mcp_interaction_server.gd` to the project root and register it as an autoload named `McpInteractionServer` (godot-mcp projects already have this). **`godot_run_project` also auto-installs it when missing** (copies the vendored file into `autoload/` and registers it in `project.godot`), so no manual setup is needed — and non-Godot projects are completely unaffected.
 - `node` on PATH
-- Godot executable — resolved in this order: the `godot_path` tool argument → the **`godotPath` setting** (the Web plugin-config page, or the `godot-bridge:` section of `settings.yaml`) → the `godot` command on PATH. Nothing to configure when `godot` is on PATH; otherwise set your engine path in **settings** (the plugin author does not preset it — Godot is a portable exe that can live anywhere). Use the **real exe full path**, never a version-manager shim (see Pitfalls).
+- Godot executable — resolved in this order: the `godot_path` tool argument → the **`godotPath` plugin setting** (the config of the `tool-godot-bridge` row: set it with `godot_set_engine_path` on DSH 0.2.x, the plugin settings section on 0.1.x) → the `godot` command on PATH. Nothing to configure when `godot` is on PATH; otherwise set your engine path (the plugin author does not preset it — Godot is a portable exe that can live anywhere). Use the **real exe full path**, never a version-manager shim (see Pitfalls).
 
 ## Install
 
@@ -63,11 +64,11 @@ DSH session
 dsh plugin --profile web add github:Smalldy/godot-bridge
 ```
 
-`dsh plugin` is a pnpm forwarder: it installs the package into the profile's `node_modules` and — because the package declares `dsh.bundle` (its `cordis.patch.yml` inserts the `tool-godot-bridge` row) — appends it to the profile's `dsh.profile.bundles` layer list. The `web` profile is the standard one the Web app already boots from, so this simply adds the tools to standard mode — **no new profile is created**. After a restart, the sixteen `godot_*` tools are available in every session on that profile. Listed in the [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) community registry (topic: `dsh-plugin`).
+`dsh plugin` is a pnpm forwarder: it installs the package into the profile's `node_modules` and — because the package declares `dsh.bundle` (its `cordis.patch.yml` inserts the `tool-godot-bridge` row) — appends it to the profile's `dsh.profile.bundles` layer list. The `web` profile is the standard one the Web app already boots from, so this simply adds the tools to standard mode — **no new profile is created**. After a restart, the seventeen `godot_*` tools are available in every session on that profile. Listed in the [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) community registry (topic: `dsh-plugin`).
 
 The same command installs a local checkout or tarball (`dsh plugin --profile web add ./path/to/godot-bridge`).
 
-> The plugin is a standard DSH bundle module: it imports `defineTool` from `@deepseek-ai/dsh-tools` and registers via `ctx.tools.register`. It must be installed through the bundle mechanism above — the harness heals the shared `@deepseek-ai/*` dependency layer inside the profile's `node_modules`, which is what makes the import resolve. Do not copy the file into a user agent preset (`~/.dsh/.agent-presets/...`); Node cannot resolve `@deepseek-ai/dsh-tools` from that location.
+> The plugin is a standard DSH bundle module: it imports `defineTool` from `@deepseek-ai/dsh-tools` and registers via `ctx.tools.register`. It must be installed through the bundle mechanism above. DSH supplies `@deepseek-ai/*` from its own installation through the launcher's runtime resolution: a package installed into the profile resolves them automatically, while a `link:`/symlinked checkout does so only for the names it declares in its own `peerDependencies` (godot-bridge ≥ 0.1.8 declares them — see [DSH 0.2+ compatibility](#dsh-02-compatibility-and-troubleshooting)). Do not copy the file into a user agent preset (`~/.dsh/.agent-presets/...`); that location is outside every resolution scope and cannot resolve `@deepseek-ai/dsh-tools`.
 
 ### Uninstall
 
@@ -75,7 +76,35 @@ The same command installs a local checkout or tarball (`dsh plugin --profile web
 dsh plugin --profile web remove godot-bridge
 ```
 
-Removes the package and its `godot-bridge` bundle layer from the profile — after a restart the sixteen `godot_*` tools are gone from sessions on that profile. The standard `web` profile itself is untouched (this never creates or removes a profile). Stop any running game first with `godot_stop_project`; the plugin's unload cleanup also terminates a Godot child it started. Reinstall any time with the `add` command above.
+Removes the package and its `godot-bridge` bundle layer from the profile — after a restart the seventeen `godot_*` tools are gone from sessions on that profile. The standard `web` profile itself is untouched (this never creates or removes a profile). Stop any running game first with `godot_stop_project`; the plugin's unload cleanup also terminates a Godot child it started. Reinstall any time with the `add` command above.
+
+## DSH 0.2+ compatibility and troubleshooting
+
+DSH 0.2 replaced the old physical module-fallback layer with an in-process **runtime resolution** that the launcher installs into Node's ESM and CommonJS resolvers. The resolver decides, per importing module, whether a bare `@deepseek-ai/*` specifier is routed to the installation's own copy — which is what a plugin importing harness packages depends on:
+
+- **Installed inside the profile** (`dsh plugin add github:…`, a tarball, or any copy under `$DSH_HOME/profiles/<name>/node_modules`): harness packages resolve from the installation automatically. Nothing to declare.
+- **Installed as a `link:` dependency** (a symlinked local checkout): the plugin's real path lives outside the profiles tree, and Node's ESM loader resolves symlinks before importing. Such a *linked root* gets harness packages routed **only for names the plugin declares in its own `peerDependencies`** — the resolver reads `peerDependencies` keys, not `dependencies`. godot-bridge ≥ 0.1.8 declares `@deepseek-ai/dsh-tools` and `@deepseek-ai/schemastery`, both marked optional so pnpm never tries to install harness packages from the registry.
+
+### Symptoms
+
+| Symptom | What it means | What to do |
+| --- | --- | --- |
+| All seventeen `godot_*` tools are missing and the launcher log shows `ERR_MODULE_NOT_FOUND: Cannot find package '@deepseek-ai/dsh-tools' imported from …/godot-bridge.mjs` | Harness packages were not routed to the installation copy. For a `link:` install this is a missing `peerDependencies` entry (the 0.1.7-and-earlier failure mode) | Update to godot-bridge ≥ 0.1.8, or install without a symlink (`dsh plugin … add ./godot-bridge-<version>.tgz`) |
+| The launcher prints `dsh: skipping profile bundle "godot-bridge": …` and the plugin page lists an error | The declared DSH peer range does not match the running runtime version. A **missing** peer imposes no constraint, so it never produces this message | Update the plugin, or accept the risk explicitly: `dsh plugin --profile <profile> allow-version godot-bridge@<version> --dsh-version <runtime> --accept-risk` |
+| `godotPath` is absent from the plugin settings page and `godot_set_engine_path` says the settings service is unavailable | A pre-0.1.8 build on DSH 0.2.x, where the legacy `settings.register` API no longer exists | Update to godot-bridge ≥ 0.1.8 |
+| The plugin row has **no settings form** at all (no `Godot engine path` field) | Expected on every build: this plugin ships no client component, and DSH 0.2 renders row forms only for plugins that register the keyed slot `plugins.row.config` themselves | Set the path with `godot_set_engine_path`, or add a `config:` block to the row (see [install](install.md#no-gui-field-on-dsh-02)) |
+| After upgrading from 0.1.x the tools run a **different Godot build** than the one configured | The pre-0.2 `settings.yaml` section is not migrated (DSH imports it by plugin entry id, and this row's id is `tool-godot-bridge`), so resolution fell back to `godot` on PATH — typically a version-manager shim | Nothing to do on godot-bridge ≥ 0.1.8: on first start the recorded value is written back automatically (only when the field is empty and the file still exists). If a warning names a dropped value instead, the restore did not take effect (the recorded path is gone, or the write was rejected) — set it again with `godot_set_engine_path` |
+
+### Verifying
+
+```sh
+npm run check                                                              # static contract check — no DSH needed
+node scripts/diagnose-dsh-resolution.mjs --profile <profile> --expect ok   # uses the installed DSH app
+```
+
+`npm run check` fails when a bare `@deepseek-ai/*` import is not declared in the manifest, when the bundle patch is missing or does not reference the package, or when the entry point loses its named exports. The diagnostic prints the profile's bundle layers, skipped bundles, detected linked roots, and the resolution result for each harness import the plugin makes — run it before and after a fix, or when DSH changes its resolution rules again.
+
+Then restart DSH (or reload the profile from the Plugins page) and confirm that a new session lists the seventeen `godot_*` tools.
 
 ## Update notices
 
@@ -99,7 +128,7 @@ godot_get_debug_output       # read the boot log
 godot_stop_project           # done
 ```
 
-Godot executable resolution: per-tool `godot_path` argument → the `godotPath` setting (the Web plugin-config page, or the `godot-bridge:` section of `settings.yaml`) → the `godot` command on PATH. Nothing to configure when `godot` is on PATH; otherwise set the engine path in **settings** and point at the **real exe**, never a shim.
+Godot executable resolution: per-tool `godot_path` argument → the `godotPath` plugin setting (the `tool-godot-bridge` row's config: set with `godot_set_engine_path` on DSH 0.2.x, the plugin settings section on 0.1.x) → the `godot` command on PATH. Nothing to configure when `godot` is on PATH; otherwise set the engine path and point at the **real exe**, never a shim.
 
 ## Pitfalls (learned the hard way)
 
@@ -121,6 +150,8 @@ install.md / install.zh-CN.md     # detailed install & maintenance
 ARCHITECTURE.md / ARCHITECTURE.zh-CN.md  # how it replaces godot-mcp + protocol details
 COVERAGE.md / COVERAGE.zh-CN.md   # full tool-by-tool comparison vs godot-mcp
 CHANGELOG.md / CHANGELOG.zh-CN.md  # release history
+scripts/check-plugin-contract.mjs  # static dependency-contract check (`npm run check`)
+scripts/diagnose-dsh-resolution.mjs  # re-runnable DSH runtime-resolution diagnostic (dev only)
 ```
 
 `mcp_interaction_server.gd`, `godot_operations.gd` and `validate_script.gd` are vendored from [godot-mcp](https://github.com/tugcantopaloglu/godot-mcp) (MIT). The plugin locates the headless scripts relative to the module (`import.meta.url`); pass an explicit `ops_script` / `validate_script` argument to override.

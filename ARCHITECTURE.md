@@ -7,7 +7,7 @@
 [godot-mcp](https://github.com/tugcantopaloglu/godot-mcp) is an MCP server (stdio JSON-RPC) wrapping three layers of real work:
 
 1. **Process management** — `spawn(godot -d --path <project>)`, collect output, kill on demand.
-2. **Runtime game control** — connect to the game's `McpInteractionServer` autoload on **TCP 127.0.0.1:9090** with newline-delimited JSON `{command, params, id}`; ~130 `game_*` tools map onto these commands.
+2. **Runtime game control** — connect to the game's `McpInteractionServer` autoload on **TCP 127.0.0.1:9090** with newline-delimited JSON `{command, params, id}`; ~105 `game_*` tools map onto these commands.
 3. **Headless static operations** — `godot --headless --path <project> --script godot_operations.gd <op> <json>` (scene edits, script validation, project creation).
 
 The MCP layer itself contributes nothing but an outer JSON-RPC shell. DeepSeek Harness already has native equivalents for everything:
@@ -40,6 +40,30 @@ godot-bridge spawns through the harness's **raw `subprocess` service** — the u
 
 All tools return the game's response JSON verbatim (canonical value validated against `{type:'object', additionalProperties:true}`), rendered as text. Tool calls are exclusive by default (no `isConcurrencySafe`), matching the single-command game server.
 
+## Dependency contract and runtime resolution
+
+A DSH plugin that imports harness packages (`@deepseek-ai/dsh-tools`, `@deepseek-ai/schemastery`, …) never resolves them from the npm registry. The launcher computes one immutable **runtime resolution** — the dependency closure of the installation plus the selected bundles — and installs it into Node's ESM and CommonJS resolvers (DSH 0.2 does this in-process, replacing the 0.1.x physical module-fallback layer; the old `.dsh-module-fallback` directories are only cleaned up). Which modules get that routing is decided per importing path:
+
+- **Inside the profiles tree** (`$DSH_HOME/profiles/<name>/…`): a profile-layer importer is routed to the installation's copy for any `@deepseek-ai/*` package the installation carries. A bundle installed with `dsh plugin add` lives here, so it needs no declaration.
+- **Linked root** (a symlink under a profile's `node_modules` whose target lies outside the profiles tree — what a `link:` dependency produces): routed only for package names the importing package declares in its own `peerDependencies`. The resolver reads `peerDependencies` keys, not `dependencies`, and Node's ESM loader resolves symlinks before importing, so the importer path really is the target outside the tree.
+- **Anything else** (a path outside both, e.g. a file copied into an agent preset): no routing at all — plain Node lookup, which cannot see the installation's packages.
+
+Two consequences shape this package's manifest:
+
+- `peerDependencies` is a **load-time contract**, not just metadata: without the declaration a `link:` install fails the whole bundle import (`ERR_MODULE_NOT_FOUND: Cannot find package '@deepseek-ai/dsh-tools'`) and none of the seventeen tools registers — the 0.1.7-and-earlier behaviour on DSH 0.2.
+- DSH also **gates** declared `@deepseek-ai/dsh` / `@deepseek-ai/dsh-*` peers against the runtime version (prereleases participate in the range match). A range that does not match makes the launcher skip the bundle with an explicit message; a missing peer imposes no constraint and therefore can never cause a skip. That is why the declaration is a range (`>=0.1.6-0`) rather than a pin, and why `peerDependenciesMeta.optional` marks the harness packages: pnpm must never fetch them from the registry.
+
+```mermaid
+flowchart LR
+    L["dsh launcher"] --> R["runtime resolution<br/>ESM + CJS resolver hooks"]
+    R -->|"importer inside the profiles tree"| I["installation copy<br/>@deepseek-ai/*"]
+    R -->|"linked root + peerDependencies key"| I
+    R -->|"linked root, name not declared"| N["native Node lookup<br/>→ ERR_MODULE_NOT_FOUND"]
+    R -->|"outside every scope"| N
+```
+
+`npm run check` enforces the declaration statically; `scripts/diagnose-dsh-resolution.mjs` prints what a running launcher actually routes.
+
 ## Architecture diagrams
 
 ### System overview
@@ -54,7 +78,7 @@ flowchart TB
         PROFILE["$DSH_HOME/profiles/web/package.json<br/>dsh.profile.bundles = base · web-app · godot-bridge"]
         NODE["profiles/web/node_modules/godot-bridge"]
         PLUGIN["cordis row tool-godot-bridge<br/>godot-bridge.mjs apply(ctx)"]
-        TOOLS["16 godot_* tools<br/>defineTool + ctx.tools.register"]
+        TOOLS["17 godot_* tools<br/>defineTool + ctx.tools.register"]
         PROMPT["system-prompt sections<br/>update notice (conditional)"]
     end
 

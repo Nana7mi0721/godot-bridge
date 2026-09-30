@@ -10,19 +10,22 @@
  *   - id: tool-godot-bridge
  *     name: godot-bridge
  *
- * 配置（官方 cordis Config + settings section，面向用户）：
+ * 配置（官方 cordis Config，面向用户）：
  *   godotPath —— Godot 可执行文件完整路径，可选、面向用户。Godot 是便携
  *   exe，可能位于任意位置，因此插件作者/部署层不预设该路径（cordis.patch.yml
- *   的 row config 留空）。用户在 settings（Web 插件配置页或 settings.yaml 的
- *   `godot-bridge:` 段）设置，热重载；未设置时 Godot 相关工具回退到从 PATH
- *   解析 `godot`，再失败才返回指引。语义校验（路径存在）由 settings 的
- *   validate 钩子承担，而非 apply 里 throw。
- * 工具参数 godot_path 优先于 settings 配置，其次 PATH 解析兜底。
+ *   的 row config 留空）。该字段为 volatile：DSH ≥ 0.2 会把它投影到插件设置页，
+ *   并通过 configEditor 写回 profile 的 cordis.patch.yml（立即生效、无需重启）；
+ *   DSH 0.1.x 走旧的 settings.register 作用域兜底。未设置时 Godot 相关工具
+ *   回退到从 PATH 解析 `godot`，再失败才返回指引。语义校验（路径存在）由写入
+ *   工具 godot_set_engine_path 在写前承担，而非 apply 里 throw。
+ * 工具参数 godot_path 优先于配置值，其次 PATH 解析兜底。
  */
 
 import { defineTool as defineToolOfficial } from '@deepseek-ai/dsh-tools'
 import Schema from '@deepseek-ai/schemastery'
 import { readFileSync, existsSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const name = 'godot-bridge'
@@ -30,16 +33,23 @@ export const name = 'godot-bridge'
 export const inject = ['subprocess', 'timer', 'tools', 'fs', 'sandboxPolicy', 'systemPrompt']
 
 /**
- * Runtime configuration schema (official cordis Config + settings section).
+ * Runtime configuration schema (official cordis Config).
  * `godotPath` is USER-facing and OPTIONAL: Godot is a portable exe that can
  * live anywhere, so the plugin author never presets it (cordis.patch.yml stays
- * empty). The user sets their own engine path in settings (the Web
- * plugin-config page or the `godot-bridge:` section of settings.yaml),
- * hot-reloaded; when unset, Godot-needing tools fall back to resolving
+ * empty). The field is volatile: DSH >= 0.2 projects it into the plugin's
+ * settings page and persists edits through @deepseek-ai/dsh-config-editor into
+ * the active profile patch, applied immediately; DSH 0.1.x falls back to the
+ * legacy settings scope. When unset, Godot-needing tools fall back to resolving
  * `godot` on PATH. (Plain ESM — no TS interface.)
  */
+// `godotPath` is a VOLATILE field on DSH >= 0.2: the settings form projects
+// volatile fields, and such a field is updated in place without remounting the
+// plugin (the resolved value is a frozen `{ get() }` reference), so the live
+// value must be read through that reference. Older schemastery builds without
+// `.volatile()` keep a plain field and remain editable through cordis config.
+const godotPathField = Schema.string().default('')
 export const Config = Schema.object({
-  godotPath: Schema.string().default(''),
+  godotPath: typeof godotPathField.volatile === 'function' ? godotPathField.volatile() : godotPathField,
 })
 
 export function apply(ctx, config) {
@@ -50,51 +60,90 @@ export function apply(ctx, config) {
 
   const PORT = 9090
 
-  // ── configuration (official settings section, user-facing) ──────────────
+  // ── engine-path configuration (dual-stack, user-owned) ──────────────────
   // godotPath is OPTIONAL and user-owned. Godot is a portable exe that can
   // live anywhere, so neither the plugin author nor the deployment presets a
-  // path. The user sets their engine path in settings (the Web plugin-config
-  // page or the `godot-bridge:` section of settings.yaml), hot-reloaded; the
-  // model can also ask the user for the path and persist it via
-  // godot_set_engine_path. Semantic validity (the path exists) is enforced by
-  // the settings `validate` hook — NOT by a throw in apply, which would fail
-  // the whole fiber and also disable the pure-file tools that never touch the
-  // Godot binary. When unset, Godot-needing tools fall back to resolving
-  // `godot` on PATH and only then return guidance.
-  // dsh-settings ≥ 0.1.2-alpha.3 dropped the `settingsNamespace` brand helper:
-  // `ctx.settings.register` now takes the namespace as a plain lowercase
-  // hyphenated string ('godot-bridge' matches /^[a-z][a-z0-9-]*$/).
+  // path. DSH >= 0.2 removed `settings.register`: configuration now lives in
+  // this plugin's Config and is persisted through
+  // @deepseek-ai/dsh-config-editor, which rewrites the active profile's
+  // cordis.patch.yml and reconciles the Loader. DSH 0.1.x only exposes the
+  // settings-scope API, so that path remains as the fallback for the declared
+  // `>=0.1.6-0` peer range (see the 0.1.x deprecation plan in the issue
+  // tracker). Neither path throws from apply: a missing service degrades to
+  // guidance and never disables the pure-file tools. When unset, Godot-needing
+  // tools fall back to resolving `godot` on PATH.
   const NS = 'godot-bridge'
-  let current = function () { return config }
-  let engineScope = null
-  // Inlined from installSettingsSection so we keep the write scope (that
-  // helper hides it); godot_set_engine_path uses engineScope to persist a path
-  // the user supplied to the model.
+  // A volatile field (DSH >= 0.2) resolves to a frozen `{ get() }` reference
+  // whose value is updated in place without remounting; a plain field (older
+  // runtimes, or a schemastery without `.volatile()`) is the value itself.
+  function readField(value) {
+    return value && typeof value.get === 'function' ? value.get() : value
+  }
+  let migrationAttempted = false
+  let engineWriter = null   // DSH >= 0.2: configEditor.edit -> profile patch
+  let engineScope = null    // DSH 0.1.x: settings scope
+  // Read from the same source the writer targets, so a runtime offering both
+  // cannot write one place and read another. `config` is the live resolved
+  // config here (volatile fields are references, see readField), which is
+  // exactly what configEditor edits.
+  function current() {
+    if (engineWriter) return config
+    if (engineScope) {
+      try { return engineScope.get() } catch (e) {}
+    }
+    return config
+  }
+  ctx.inject(['configEditor'], function (cctx) {
+    try {
+      const editor = cctx.configEditor
+      if (!editor || typeof editor.edit !== 'function') return
+      engineWriter = async function (p) {
+        const own = ctx.fiber && ctx.fiber.entry ? ctx.fiber.entry : null
+        const rows = typeof editor.entries === 'function' ? editor.entries() : []
+        const entry = rows.find(function (row) { return row === own })
+          || rows.find(function (row) { return row && row.options && row.options.name === 'godot-bridge' })
+        if (!entry) {
+          throw new Error('cannot locate this plugin\'s configuration entry (a home patch or command-line overlay may own it); set `godotPath` by hand in the `tool-godot-bridge` row config of the profile\'s cordis.patch.yml instead')
+        }
+        await editor.edit(entry, function (previous) {
+          return Object.assign({}, previous, { godotPath: p })
+        })
+      }
+      // Runs after engineWriter is set, so the restore goes through the same
+      // writer (and the same profile-patch path) as an explicit tool call.
+      restoreLegacyGodotPath()
+    } catch (e) {
+      try { ctx.logger.warn('[godot-bridge] configEditor wiring skipped: ' + String((e && e.message) || e)) } catch (e2) {}
+    }
+  })
+  // 0.1.x fallback. On 0.2 `settings.register` is gone, so this child wires
+  // nothing at all; the engineWriter above serves that runtime.
   ctx.inject(['settings'], function (sctx) {
     try {
-      const scope = sctx.settings.register(NS, Config, {
+      const settings = sctx.settings
+      if (!settings || typeof settings.register !== 'function') return
+      const scope = settings.register(NS, Config, {
         base: config,
         validate: function (value) {
-          const p = value && typeof value.godotPath === 'string' ? value.godotPath.trim() : ''
+          const raw = value ? readField(value.godotPath) : ''
+          const p = typeof raw === 'string' ? raw.trim() : ''
           if (p.length > 0 && !existsSync(p)) {
             throw new Error('godot-bridge: godotPath points to a nonexistent file: "' + p + '"')
           }
         },
       })
       engineScope = scope
-      current = function () { return scope.get() }
       sctx.effect(function () {
         return function () {
           // Settings detached (not our own unload): fall back to the composition
           // entry config so the plugin keeps working exactly as composed.
           if (ctx.fiber && (ctx.fiber.state === 4 || ctx.fiber.state === 5)) return
           engineScope = null
-          current = function () { return config }
         }
       })
     } catch (e) {
       // Registration drift must degrade, not take the whole plugin down.
-      try { ctx.logger.warn('[godot-bridge] settings registration skipped: ' + String((e && e.message) || e)) } catch (e2) {}
+      try { ctx.logger.warn('[godot-bridge] legacy settings registration skipped: ' + String((e && e.message) || e)) } catch (e2) {}
     }
   })
 
@@ -108,7 +157,7 @@ export function apply(ctx, config) {
         return systemPrompt.section({
           name: 'godot-bridge:config-guidance',
           order: 150,
-          text: 'GODOT ENGINE PATH - godot-bridge drives a Godot game. If a godot_* tool reports that no Godot engine path is configured, do NOT search the filesystem for Godot. Instead, ask the user where their Godot executable is (or tell them how to set it), then persist it with the godot_set_engine_path tool; alternatively the user can set it in settings (the Web plugin-config page, or the `godot-bridge:` section of settings.yaml, key `godotPath`) or add `godot` to their PATH. / 中文：godot-bridge 需要一个 Godot 引擎路径。若 godot_* 工具提示未配置引擎路径，不要自行搜索文件系统。请向用户询问其 Godot 可执行文件位置（或告知用户如何设置），然后用 godot_set_engine_path 工具保存；用户也可在设置（Web 插件配置页，或 settings.yaml 的 `godot-bridge:` 段，键 `godotPath`）中填写，或将 `godot` 加入 PATH。',
+          text: 'GODOT ENGINE PATH - godot-bridge drives a Godot game. If a godot_* tool reports that no Godot engine path is configured, do NOT search the filesystem for Godot. Instead, ask the user where their Godot executable is, then persist it with the godot_set_engine_path tool. On DSH 0.2+ that tool writes the profile patch and applies immediately (DSH renders no settings form for this plugin\'s row — see issue #9); the user can alternatively add a `config: { godotPath: ... }` block to the `tool-godot-bridge` row in the profile\'s cordis.patch.yml, or add `godot` to PATH. On DSH 0.1.x the path lives in the `godot-bridge:` section of settings.yaml. / 中文：godot-bridge 需要一个 Godot 引擎路径。若 godot_* 工具提示未配置引擎路径，不要自行搜索文件系统。请向用户询问其 Godot 可执行文件位置，然后用 godot_set_engine_path 工具保存——DSH 0.2+ 上该工具写 profile patch 并立即生效（DSH 不为本插件的行渲染设置表单，见 issue #9）；用户也可改为在 profile 的 cordis.patch.yml 中给 `tool-godot-bridge` 行加 `config: { godotPath: ... }` 块，或把 `godot` 加入 PATH。DSH 0.1.x 上该路径位于 settings.yaml 的 `godot-bridge:` 段。',
         })
       })
       ctx.effect(function () {
@@ -128,7 +177,78 @@ export function apply(ctx, config) {
     } catch (e) {}
   }
 
-  const GODOT_PATH_GUIDANCE = 'No Godot engine path is available. Ask the user where their Godot executable is and persist it with the godot_set_engine_path tool, or have the user set it in settings (the Web plugin-config page, or the `godot-bridge:` section of settings.yaml, key `godotPath`), add `godot` to PATH, or pass the godot_path tool argument.'
+  const GODOT_PATH_GUIDANCE = 'No Godot engine path is available. Ask the user where their Godot executable is and persist it with the godot_set_engine_path tool (it writes the profile patch and applies immediately on DSH 0.2+), add `godot` to PATH, pass the godot_path tool argument, or set `godotPath` by hand — a `config:` block on the `tool-godot-bridge` row of the profile\'s cordis.patch.yml on DSH 0.2+, the `godot-bridge:` section of settings.yaml on DSH 0.1.x. DSH renders no settings form for this plugin\'s row (issue #9), so there is no GUI field to point the user at.'
+
+  // ── legacy-config migration ─────────────────────────────────────────────
+  // DSH 0.2 imports a leftover settings.yaml by plugin ENTRY ID, and this
+  // plugin's row id is `tool-godot-bridge` while the 0.1.x section was named
+  // `godot-bridge` — so a path configured before the upgrade is silently NOT
+  // carried over. That matters because the fallback is `godot` on PATH, which
+  // is typically a version-manager shim (this plugin's own tool docs warn
+  // against shims): the plugin would quietly run a different engine build than
+  // the one the user configured. So the recorded value is read here and written
+  // back into the runtime that actually owns the setting — see
+  // restoreLegacyGodotPath below, plus the warning in resolveGodotPath for the
+  // case where the restore could not be performed.
+  function legacySettingsFiles() {
+    const files = []
+    try { files.push(join(homedir(), '.dsh', 'settings.yaml.imported')) } catch (e) {}
+    try { files.push(join(homedir(), '.dsh', 'settings.yaml')) } catch (e) {}
+    if (process.env.DSH_HOME) files.push(join(process.env.DSH_HOME, 'settings.yaml.imported'))
+    return files
+  }
+  function findLegacyGodotPath() {
+    for (const file of legacySettingsFiles()) {
+      if (!file || !existsSync(file)) continue
+      try {
+        // Section-style lookup: a `godot-bridge:` line followed by an indented
+        // `godotPath:` key. Avoids a YAML dependency for one optional hint.
+        const section = readFileSync(file, 'utf8').match(/^godot-bridge:[ \t]*\r?\n((?:[ \t]+.*(?:\r?\n|$))*)/m)
+        if (!section) continue
+        const value = section[1].match(/^[ \t]+godotPath:[ \t]*(.+?)[ \t]*$/m)
+        if (value && value[1].trim().length > 0) {
+          return { path: value[1].trim().replace(/^['"]|['"]$/g, ''), file }
+        }
+      } catch (e) {}
+    }
+    return null
+  }
+
+  // One-shot repair of the drop described above: when this runtime has no
+  // configured path and a pre-0.2 file still records one, write it back through
+  // the same writer godot_set_engine_path uses, so the value is restored where
+  // this runtime actually reads it (and, through the profile-patch write path,
+  // takes effect without a restart). Only ever fills an EMPTY field: an
+  // explicit runtime value is the user's current intent and is never replaced
+  // by a stale file. Best-effort: a rejected write leaves the PATH fallback
+  // (plus the warning in resolveGodotPath) exactly as before.
+  async function restoreLegacyGodotPath() {
+    if (migrationAttempted) return
+    migrationAttempted = true
+    try {
+      const c = current()
+      const raw = c ? readField(c.godotPath) : ''
+      if (typeof raw === 'string' && raw.trim().length > 0) return
+      const legacy = findLegacyGodotPath()
+      if (!legacy || !legacy.path || !existsSync(legacy.path)) return
+      if (!engineWriter) return
+      await engineWriter(legacy.path)
+      try {
+        ctx.logger.info(
+          '[godot-bridge] restored the engine path recorded in ' + legacy.file
+          + ' ("' + legacy.path + '"): DSH 0.2 migrates that file by plugin entry id '
+          + 'and this plugin\'s row id is "tool-godot-bridge", so the value was not carried over.',
+        )
+      } catch (e) {}
+    } catch (e) {
+      try {
+        ctx.logger.warn(
+          '[godot-bridge] could not restore the pre-0.2 engine path; run godot_set_engine_path to set it. '
+          + String((e && e.message) || e),
+        )
+      } catch (e2) {}
+    }
+  }
 
   // ── update notice state (best-effort; see checkForUpdate below) ──────────
   // The installed version comes from this bundle's own package.json; the
@@ -224,22 +344,39 @@ export function apply(ctx, config) {
     return null
   }
 
-  // Godot exe resolution: explicit tool arg > user settings godotPath > PATH.
-  // A configured path is used only when it exists (the settings `validate`
-  // hook already refused a bad one at write time; this is the runtime backstop
-  // for a value that slipped in via cordis.patch.yml or an external edit). On
-  // a missing/exhausted explicit path we keep falling through to PATH, and
+  // Godot exe resolution: explicit tool arg > configured godotPath > PATH.
+  // A configured path is used only when it exists: godot_set_engine_path
+  // refuses a nonexistent path at write time, and this is the runtime backstop
+  // for a value that slipped in via cordis.patch.yml or an external edit. On a
+  // missing/exhausted explicit path we keep falling through to PATH, and
   // return null only when every source fails so callers can guide.
   async function resolveGodotPath(explicit) {
     if (explicit && String(explicit).trim().length > 0) return String(explicit).trim()
     let configured = ''
     try {
       const c = current()
-      configured = c && typeof c.godotPath === 'string' ? c.godotPath.trim() : ''
+      const raw = c ? readField(c.godotPath) : ''
+      configured = typeof raw === 'string' ? raw.trim() : ''
     } catch (e) {}
     if (configured.length > 0 && existsSync(configured)) return configured
     try {
-      return await subprocess.resolveExecutable('godot')
+      const resolved = await subprocess.resolveExecutable('godot')
+      // Warn only when the fallback actually wins and a pre-0.2 value was left
+      // behind: that combination means the user's configured engine build was
+      // silently replaced by whatever `godot` resolves to (often a shim).
+      const legacy = findLegacyGodotPath()
+      if (legacy && legacy.path !== resolved) {
+        try {
+          ctx.logger.warn(
+            '[godot-bridge] no godotPath is configured on this runtime, but '
+            + legacy.file + ' still records one: "' + legacy.path + '". '
+            + 'DSH 0.2 migrates that file by plugin entry id, and this plugin\'s row id is '
+            + '"tool-godot-bridge", so the value was not carried over. Falling back to "'
+            + resolved + '". Re-set the engine path with godot_set_engine_path to use the recorded build.',
+          )
+        } catch (e) {}
+      }
+      return resolved
     } catch (e) {}
     return null
   }
@@ -1042,7 +1179,7 @@ export function apply(ctx, config) {
   const defs = [
     defineTool({
       name: 'godot_set_engine_path',
-      description: 'Persist the Godot engine executable path into settings so subsequent godot_* tools can launch the project or run headless operations. Use this when the user tells you where their Godot executable is (or right after you asked them for it) instead of editing settings.yaml by hand. The path must exist and is written through the settings service (schema- and existence-validated, hot-reloaded — no restart needed).',
+      description: 'Persist the Godot engine executable path into this plugin\'s configuration so subsequent godot_* tools can launch the project or run headless operations. Use this when the user tells you where their Godot executable is (or right after you asked them for it). The path must exist; it is written through the profile configuration service (DSH >= 0.2, applied immediately) or the legacy settings service (DSH 0.1.x), and takes effect without a restart.',
       required: ['godot_path'],
       properties: {
         godot_path: { type: 'string', description: 'Absolute path to the Godot executable (the real exe, never a version-manager shim)' },
@@ -1051,13 +1188,23 @@ export function apply(ctx, config) {
         const p = String(args.godot_path || '').trim()
         if (!p) return { error: 'godot_path is required' }
         if (!existsSync(p)) return { error: 'godot_path does not exist: "' + p + '". Ask the user for the correct path to their Godot executable.' }
-        if (!engineScope) return { error: 'the settings service is not available here, so the engine path cannot be persisted. Ask the user to set godotPath in the `godot-bridge:` section of settings.yaml manually.' }
-        try {
-          await engineScope.update({ godotPath: p })
-        } catch (e) {
-          return { error: 'failed to save engine path: ' + String((e && e.message) || e) }
+        if (engineWriter) {
+          try {
+            await engineWriter(p)
+          } catch (e) {
+            return { error: 'failed to save engine path: ' + String((e && e.message) || e) }
+          }
+          return { success: true, godot_path: p, persisted: 'profile-patch', note: 'Engine path saved to this profile\'s plugin configuration (applied immediately; no restart needed).' }
         }
-        return { success: true, godot_path: p, note: 'Engine path saved to settings (hot-reloaded; no restart needed).' }
+        if (engineScope) {
+          try {
+            await engineScope.update({ godotPath: p })
+          } catch (e) {
+            return { error: 'failed to save engine path: ' + String((e && e.message) || e) }
+          }
+          return { success: true, godot_path: p, persisted: 'settings', note: 'Engine path saved to settings (hot-reloaded; no restart needed).' }
+        }
+        return { error: 'no configuration service is available in this session, so the engine path cannot be persisted. Ask the user to set the `godotPath` option by hand on the `tool-godot-bridge` row of the profile\'s cordis.patch.yml (DSH renders no settings form for this row — issue #9), or to pass godot_path per call.' }
       },
     }),
 
@@ -1091,7 +1238,7 @@ export function apply(ctx, config) {
       properties: {
         project_path: { type: 'string', description: 'Path to the Godot project (default: current session workspace)' },
         scene: { type: 'string', description: 'Optional scene to run relative to the project, e.g. scenes/main/main_menu.tscn' },
-        godot_path: { type: 'string', description: 'Godot executable. Default: the godotPath setting (Web plugin-config page or settings.yaml godot-bridge section), then the godot command on PATH. Use the REAL exe full path - never a shim.' },
+        godot_path: { type: 'string', description: "Godot executable. Default: the plugin's Godot engine path setting, then the godot command on PATH. Use the REAL exe full path - never a shim." },
         debug: { type: 'boolean', description: 'Run with -d (debug mode). Default true.' },
         wait_ms: { type: 'number', description: 'How long to wait for the interaction server before giving up (default 20000)' },
         port: { type: 'number', description: 'Interaction-server port for the spawned instance (default 9090; auto-falls back to 9091+ when occupied by a different project)' },

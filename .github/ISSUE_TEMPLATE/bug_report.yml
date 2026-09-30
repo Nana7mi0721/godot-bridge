@@ -1,0 +1,87 @@
+name: Bug report / 缺陷报告
+description: 插件加载失败、工具消失、运行时报错等问题的报告模板 / Report a plugin load failure, missing tools, or runtime errors
+title: '[Bug] '
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        先跑一遍诊断并把输出贴进来，能省掉一轮往返：
+
+        ```sh
+        npm run check
+        node scripts/diagnose-dsh-resolution.mjs --profile <profile> --expect ok
+        ```
+
+        ⚠️ 贴日志前请把凭据、token、`git remote` URL 打码。
+
+        ℹ️ 插件行没有配置表单（看不到 `Godot engine path`）**不是缺陷**，属已知限制，见 #9；设置引擎路径请用 `godot_set_engine_path` 工具或该行的 `config:` 块。
+
+  - type: input
+    id: dsh_version
+    attributes:
+      label: DSH 版本 / DSH version
+      description: 应用版本（`dsh --version`，或桌面版「关于」），以及 `$DSH_HOME` 路径。
+      placeholder: '0.2.0-rc.2 (desktop), %USERPROFILE%\.dsh'
+    validations:
+      required: true
+
+  - type: input
+    id: plugin_version
+    attributes:
+      label: 插件版本 / Plugin version
+      description: 已安装的 godot-bridge 版本（`godot_ping` 的 `plugin_version`，或 profile 里的 package.json）。
+      placeholder: '0.1.7'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: 安装方式 / Install method
+      description: `link:`（本地 checkout 符号链接）与其它方式在 DSH 0.2 的解析规则下行为不同。
+      options:
+        - 'link: 本地 checkout（符号链接）'
+        - 'dsh plugin add github:…'
+        - 'dsh plugin add <tarball>.tgz'
+        - 'npm registry 包'
+        - '其它（请在现象里说明）'
+    validations:
+      required: true
+
+  - type: input
+    id: profile
+    attributes:
+      label: Profile 与平台 / Profile and platform
+      placeholder: 'web / desktop, Windows 11 x64'
+    validations:
+      required: true
+
+  - type: textarea
+    id: symptom
+    attributes:
+      label: 现象 / Symptom
+      description: 哪些 `godot_*` 工具不见了、插件页显示了什么、launcher 日志里的完整报错行。
+      placeholder: |
+        17 个 godot_* 工具全部消失；launcher 打印：
+        dsh: skipping profile bundle "godot-bridge": … / ERR_MODULE_NOT_FOUND …
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 诊断输出 / Diagnostics output
+      description: '`npm run check` 与 `node scripts/diagnose-dsh-resolution.mjs --profile <profile>` 的完整输出（含 bundle layers / skipped bundles / linked roots / 每个 import 的解析结果）。'
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为 / Expected behaviour
+      placeholder: 新会话应列出全部 `godot_*` 工具，插件页无错误。
+    validations:
+      required: false

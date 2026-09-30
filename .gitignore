@@ -18,3 +18,6 @@ Thumbs.db
 .npm-cache/
 *.tgz
 release-notes.md
+
+# Local investigation scratch (agent diagnostics, fixtures, extracted harness sources)
+.investigate/
