@@ -5,10 +5,12 @@
   "type": "module",
   "main": "plugin/godot-bridge.mjs",
   "exports": {
-    ".": "./plugin/godot-bridge.mjs"
+    ".": "./plugin/godot-bridge.mjs",
+    "./client": "./client/client.js"
   },
   "files": [
     "plugin/",
+    "client/",
     "cordis.patch.yml",
     "CHANGELOG.md",
     "CHANGELOG.zh-CN.md"
@@ -47,6 +49,13 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale"
+      ]
     }
   }
 }
