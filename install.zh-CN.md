@@ -6,10 +6,11 @@
 
 ```
 plugin/godot-bridge.mjs           # 插件本体（标准 DSH 模块：命名导出 name/inject/apply）
+client/client.js                  # 浏览器半侧：插件页上该行的配置页（dsh.client）
 plugin/mcp_interaction_server.gd  # 取自 godot-mcp（MIT）——游戏内 TCP 服务器 autoload
 plugin/godot_operations.gd        # 取自 godot-mcp（MIT）——headless 操作脚本
 plugin/validate_script.gd         # 取自 godot-mcp（MIT）——GDScript 编译检查
-package.json                      # dsh.bundle manifest（供 `dsh plugin add` 安装）
+package.json                      # dsh.bundle + dsh.client manifest（供 `dsh plugin add` 安装）
 cordis.patch.yml                  # bundle patch 层（插入工具行）
 ```
 
@@ -31,15 +32,15 @@ dsh plugin --profile web add github:Smalldy/godot-bridge
 
 ```sh
 dsh plugin --profile web add ./path/to/godot-bridge     # 本地 checkout
-dsh plugin --profile web add ./godot-bridge-0.1.8.tgz   # pnpm pack 产物
+dsh plugin --profile web add ./godot-bridge-0.2.0.tgz   # pnpm pack 产物
 ```
 
 ### 本地开发（`link:`）
 
-`link:` 依赖（`"godot-bridge": "link:/path/to/godot-bridge"`，即把本地 checkout 加进 profile 时 pnpm 写下的形式）会把 profile 的 `node_modules/godot-bridge` 变成指向你工作副本的符号链接，改完无需重装即可生效。它同时也是 launcher 的 runtime resolution 唯一无法自动路由的安装形态：插件真实路径在 profiles 树之外，而 *linked root* 只有在插件 `peerDependencies` 里声明了该包名时才会拿到 harness 包。这次正是为此补上声明——没有它，整个 bundle 会 import 失败（`ERR_MODULE_NOT_FOUND: Cannot find package '@deepseek-ai/dsh-tools' imported from …godot-bridge.mjs`），17 个工具一个都注册不上。
+`link:` 依赖（`"godot-bridge": "link:/path/to/godot-bridge"`，即把本地 checkout 加进 profile 时 pnpm 写下的形式）会把 profile 的 `node_modules/godot-bridge` 变成指向你工作副本的符号链接，因此改代码无需重装即可生效：浏览器半侧（`client/client.js`）由宿主按产物文件轮询在约一秒内热换，插件 host 半侧在重载 profile 时重新 import。唯一的例外是 `package.json`——见下一条。它同时也是 launcher 的 runtime resolution 唯一无法自动路由的安装形态：插件真实路径在 profiles 树之外，而 *linked root* 只有在插件 `peerDependencies` 里声明了该包名时才会拿到 harness 包。这次正是为此补上声明——没有它，整个 bundle 会 import 失败（`ERR_MODULE_NOT_FOUND: Cannot find package '@deepseek-ai/dsh-tools' imported from …godot-bridge.mjs`），17 个工具一个都注册不上。
 
-- 不需要「改完即生效」时，优先用非符号链接安装：`pnpm pack` 后 `dsh plugin --profile web add ./godot-bridge-0.1.8.tgz`（每次改动后重装）。
-- 改完 manifest 或插件后，重新加载 profile（插件页）或重启 DSH，确认 17 个工具都在。`npm run check` 守护依赖契约，`scripts/diagnose-dsh-resolution.mjs` 会报告 launcher 实际路由了什么——见 [README → DSH 0.2+ 兼容性与故障排查](README.zh-CN.md#dsh-02-兼容性与故障排查)。
+- 不需要「改完即生效」时，优先用非符号链接安装：`pnpm pack` 后 `dsh plugin --profile web add ./godot-bridge-0.2.0.tgz`（每次改动后重装）。
+- 改完插件的 host 半侧后，重新加载 profile（插件页）或重启 DSH，确认 17 个工具都在。改完 `package.json`（`dsh.client` 声明、`exports`、`files`）则**必须重启 DSH**：客户端模块扫描对每个 Loader 行只读一次该包的 manifest，并缓存到宿主重启为止，重载 profile 不够。`npm run check` 守护依赖契约，`scripts/diagnose-dsh-resolution.mjs` 会报告 launcher 实际路由了什么——见 [README → DSH 0.2+ 兼容性与故障排查](README.zh-CN.md#dsh-02-兼容性与故障排查)。
 
 ## 移除
 
@@ -61,7 +62,7 @@ dsh plugin --profile web remove godot-bridge
 
   `godotPath` 是插件自身配置里的 `.volatile()` 字段：按活值读取（volatile 字段更新不需要 remount 插件）。取值位置：
 
-  - **DSH 0.2.x** —— `tool-godot-bridge` 行的配置：用 `godot_set_engine_path` 工具设置（它经 `ctx.configEditor.edit(...)` 写入 profile patch，立即生效、无需重启），或在 `$DSH_HOME/profiles/<profile>/cordis.patch.yml` 里给该行加 `config:` 块。工具会在写入前校验文件存在，并返回 `persisted: 'profile-patch'`。
+  - **DSH 0.2.x** —— `tool-godot-bridge` 行的配置，有三条等价入口：插件页 **godot-bridge 卡片页**上的 `Godot 可执行文件路径` 字段（见下文[DSH 0.2 上的 GUI 字段](#dsh-02-上的-gui-字段)）、`godot_set_engine_path` 工具（它经 `ctx.configEditor.edit(...)` 写入 profile patch，立即生效、无需重启），或在 `$DSH_HOME/profiles/<profile>/cordis.patch.yml` 里给该行手写 `config:` 块。工具会在写入前校验文件存在，并返回 `persisted: 'profile-patch'`；GUI 字段是一次纯文本保存（浏览器无法 stat 文件），请直接指向真实 exe。
 
     ```yaml
     - id: tool-godot-bridge
@@ -73,16 +74,18 @@ dsh plugin --profile web remove godot-bridge
 - 端口/主机：写死 `127.0.0.1:9090`（与 `McpInteractionServer` autoload 默认一致）。
 - headless 脚本定位：插件按模块相对路径（`import.meta.url`）；传显式 `ops_script` / `validate_script` 参数可覆盖。
 
-## DSH 0.2 上没有 GUI 字段
+## DSH 0.2 上的 GUI 字段
 
-DSH 0.2 的插件页只为「**客户端组件**注册了 keyed slot `plugins.row.config`」的行渲染配置表单——没有任何内置包注册该插槽，因此插件必须自带客户端入口（manifest 里的 `dsh.client`）。godot-bridge 没有，所以它的行**没有设置表单**，也没有 `Godot engine path` 字段。
+只有当某个**浏览器半侧**以**包名**为键注册 keyed slot `plugins.bundle.config` 时，DSH 才会渲染该组合包的配置区（某一**行**自己的表单则用 keyed slot `plugins.row.config`、以 `<包名>#<行 id>` 为键，位置更深一层；组合包有多个可独立配置的行时它才是正确选择）。本组合包自带该浏览器半侧（`client/client.js`，在 manifest 里由 `dsh.client` 声明）并注册 `godot-bridge`，因此在插件页打开 **godot-bridge** 卡片时，`Godot 可执行文件路径` 字段就出现在描述与行列表之间，带**保存**与针对本 profile 覆盖值的**恢复默认**。
 
-这是呈现层缺口，不是配置损坏：Host 侧是正确的（`settings.describe()` 能为 `tool-godot-bridge` 行投影出 `godotPath`），上面两条设置路径也都可用。该缺口已单独作为功能请求跟踪。
+保存走的是 DSH 设置的同一条路：落到本 profile `cordis.patch.yml` 的 `tool-godot-bridge` 行，也就是 `godot_set_engine_path` 写入的同一处。所以该字段、那个工具、以及手写的 `config:` 块是同一个值的三种视角，改动立即生效、无需重启。关闭那一行时配置区随之消失——浏览器半侧属于那一行。
+
+在 DSH 0.1.6–0.1.x 上，该 slot 虽然存在，但运行时没有设置表单服务可读该值，因此浏览器半侧在那里不注册，卡片维持上文[配置](#配置)一节描述的行为（没有 GUI 字段，用工具或 `settings.yaml`）。
 
 ## 维护
 
-- 改 `plugin/godot-bridge.mjs` 无需重新构建（纯 ESM）。
-- 改完插件后重新安装进 profile（再次 `dsh plugin --profile web add github:Smalldy/godot-bridge`）并重启会话。`link:` 安装无需重装——重新加载 profile（插件页）或重启 DSH 即可。
+- 改 `plugin/godot-bridge.mjs` 无需重新构建（纯 ESM）；改 `client/client.js` 同样无需构建——宿主按产物文件轮询，约一秒内热换。
+- 改完插件后重新安装进 profile（再次 `dsh plugin --profile web add github:Smalldy/godot-bridge`）并重启会话。`link:` 安装无需重装——host 半侧的改动重载 profile（插件页）即可，而 `package.json`（`dsh.client`/`exports`/`files`）的改动必须重启 DSH：这些事实对每个 Loader 行只读一次并缓存到重启为止。
 - 提交或发布前先跑 `npm run check`（静态依赖契约：`@deepseek-ai/*` peers 声明、bundle patch、入口导出）。`node scripts/diagnose-dsh-resolution.mjs --profile <profile>` 会重跑 launcher 的解析并打印它实际路由了什么（仅开发用，需要已安装的 DSH 应用）。
 - manifest 的 `peerDependencies` 会影响 DSH 的加载决策：声明的 `@deepseek-ai/dsh-*` 范围与当前运行时不匹配时，DSH 会带明确信息 **skip** 该 bundle，而不是在 import 阶段失败。
 - **发布更新**：在 `package.json` 递增 `version` 并推送——插件启动时的版本检查（见 README「更新提示」）以此作为发布标记，已装用户只有在远端版本更高时才会看到提示。

@@ -1,14 +1,16 @@
 {
   "name": "godot-bridge",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "description": "DSH (DeepSeek Harness) plugin: launch and drive a running Godot 4.x game through its in-game TCP interaction server — replaces the godot-mcp MCP server with native agent tools.",
   "type": "module",
   "main": "plugin/godot-bridge.mjs",
   "exports": {
-    ".": "./plugin/godot-bridge.mjs"
+    ".": "./plugin/godot-bridge.mjs",
+    "./client": "./client/client.js"
   },
   "files": [
     "plugin/",
+    "client/",
     "cordis.patch.yml",
     "CHANGELOG.md",
     "CHANGELOG.zh-CN.md"
@@ -47,6 +49,13 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale"
+      ]
     }
   }
 }

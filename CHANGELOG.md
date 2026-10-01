@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-10-01
+
+### Added
+
+- **`Godot engine path` is now editable in the GUI.** The bundle ships a browser half (`client/client.js`, declared through `dsh.client` in the manifest) that registers this bundle's configuration section — the keyed slot `plugins.bundle.config`, keyed by the package name — so the `godot-bridge` card on the Plugins page shows the path field between its description and its row list, with a **Save** and a **Reset to default** for a path this profile overrides. (The per-row slot `plugins.row.config`, keyed `<package name>#<row id>`, would put the same form one level deeper behind a Configure control on the row; it becomes the right slot once a bundle has several independently configurable rows, which this one does not.) A save travels the same road as the rest of DSH's settings and lands on the same `cordis.patch.yml` row `godot_set_engine_path` writes, so the field, the tool, and a hand-written `config:` block are three views of one value — and a change applies without a restart. Switching that row off withdraws the section with it, because the browser half belongs to that row. This closes the 0.1.8 known limitation below.
+- `npm run check` now verifies the browser half as well, so the class of mistake that leaves a bundle without its form fails the build instead of failing silently: the `dsh.client` declaration (its allowed members, `platform: 'web'`, string-array `inject`/`external`, boolean `immediately`), an `exports["./client"]` target that exists and is shipped by `files`, a `window.__ModuleLoader__.load({ id })` registration whose id is the package name, the `slots` service declaration, every `require()` specifier against the web client's platform seed modules plus `dsh.client.external`, a `plugins.bundle.config` key against this bundle's package name, and a `plugins.row.config` key against the rows the patch declares. Slot keys and module requests are read from code, so a comment cannot satisfy a check.
+
+### Changed
+
+- The browser half is inert where DSH cannot host it: 0.1.6–0.1.x already declares these slots but has no settings-form service to read the value through, so the registration sits behind `ctx.inject(['configForms'], …)` and those runtimes keep exactly the previous behaviour (no GUI field, `godot_set_engine_path` and `settings.yaml` as before). A runtime that never scans `dsh.client` (anything older than 0.1.0-rc.7) ignores the new manifest member.
+
 ## [0.1.8] - 2026-09-30
 
 ### Fixed
@@ -137,6 +148,7 @@ Initial release — a standard DSH bundle that replaces the godot-mcp MCP server
 - Correct Godot 4 keycodes in `godot_manage_input_map` (fixes godot-mcp's Godot 3 baseline bug).
 - Bilingual documentation (README / install / ARCHITECTURE / COVERAGE) incl. install and uninstall guides; `cordis.patch.yml` included in published `files`.
 
+[0.2.0]: https://github.com/Smalldy/godot-bridge/compare/v0.1.8...v0.2.0
 [0.1.8]: https://github.com/Smalldy/godot-bridge/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/Smalldy/godot-bridge/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/Smalldy/godot-bridge/compare/v0.1.5...v0.1.6

@@ -53,6 +53,8 @@ godot-bridge 走 harness 的**原始 `subprocess` 服务**——shell 执行器�
 - `peerDependencies` 是**加载期契约**，不只是元数据：缺声明时 `link:` 安装会让整个 bundle import 失败（`ERR_MODULE_NOT_FOUND: Cannot find package '@deepseek-ai/dsh-tools'`），17 个工具一个都不注册——这就是 0.1.7 及更早版本在 DSH 0.2 上的表现。
 - DSH 还会用运行时版本**门禁**已声明的 `@deepseek-ai/dsh` / `@deepseek-ai/dsh-*` peers（预发布版本参与范围匹配）。范围不匹配时 launcher 会带明确信息 skip 该 bundle；而**未声明** peer 不构成约束，因此永远不可能导致 skip。这就是为什么声明用范围（`>=0.1.6-0`）而不是精确锁定，也是为什么用 `peerDependenciesMeta.optional` 标注这些 harness 包：pnpm 绝不能去 registry 拉它们。
 
+**浏览器半侧**是另一套契约，且在这里刻意什么都不声明。`dsh.client` 让宿主把 `exports["./client"]` 作为经典 script 供给 web 客户端，该 script 的工厂在客户端自己的平台模块表（React 与少数静态库）里解析 import，而不是走 Node——因此没有任何 `peerDependencies` 条目参与其中。它存在的理由只有一个：插件页只为「浏览器半侧注册了它的某个 slot」的组合包渲染配置区，而本半侧以包名为键注册 `plugins.bundle.config`，正是这条注册把 `Godot engine path` 字段放到了 **godot-bridge 卡片页**上。它的写入走客户端设置通道（`configForms` 作用域 → 设置服务 → `configEditor.edit`），也就是 `godot_set_engine_path` 工具写入的同一个 profile patch。
+
 ```mermaid
 flowchart LR
     L["dsh launcher"] --> R["runtime resolution<br/>ESM + CJS 解析器钩子"]
@@ -71,7 +73,7 @@ flowchart LR
 ```mermaid
 flowchart TB
     subgraph GITHUB["GitHub — Smalldy/godot-bridge"]
-        REPO["bundle<br/>package.json (dsh.bundle) · cordis.patch.yml · plugin/"]
+        REPO["bundle<br/>package.json (dsh.bundle · dsh.client) · cordis.patch.yml · plugin/ · client/"]
     end
 
     subgraph DSH["DeepSeek Harness host（web profile）"]

@@ -29,8 +29,10 @@ if (!existsSync(join(root, 'package.json'))) {
 
 const problems = []
 const verified = []
+const notes = []
 const fail = (message) => problems.push(message)
 const pass = (message) => verified.push(message)
+const note = (message) => notes.push(message)
 // A BOM is legal in files edited on Windows; Node strips it when loading
 // package.json and ESM, so the checker must tolerate it as well.
 const readText = (abs) => readFileSync(abs, 'utf8').replace(/^\uFEFF/, '')
@@ -80,6 +82,125 @@ for (const value of patchFiles) {
   if (!shipped(rel)) fail(`"files" whitelist does not ship the bundle patch ${rel}`)
   if (!read(rel).includes(pkg.name)) fail(`bundle patch ${rel} never references "${pkg.name}", so it cannot register this bundle's row`)
   else pass(`bundle patch ${rel} registers a row for ${pkg.name}`)
+}
+
+// -------------------------------------------------------------- browser half
+// A package's `dsh.client` declaration turns its `exports["./client"]` file into
+// a browser bundle (dsh-client-modules). The four ways to get that wrong are all
+// either silent or late at runtime, so they are checked statically here:
+//   1. a declaration member the host validator rejects, or a platform the host
+//      does not serve (`parseDshClient`);
+//   2. a factory whose `id` is not the package name — the module table then
+//      cannot answer `<package>/client` for the Loader row;
+//   3. a `require()` the platform seed table cannot answer and that
+//      `dsh.client.external` does not name — the browser throws
+//      `missed the module table` at first use;
+//   4. a keyed slot key that does not name a row this bundle's patch declares
+//      (`<package name>#<row id>`), which leaves the intended row with no
+//      configuration control and no error.
+// The seed list is the runtime module table of the 0.2 web client
+// (`dsh-web-frontend`'s frozen platform seed); a specifier outside it has to be
+// declared in `dsh.client.external` or answered by another plugin's bundle.
+const SEED_MODULES = new Set([
+  'react',
+  'react/jsx-runtime',
+  'react-dom',
+  'react-dom/client',
+  '@deepseek-ai/cordis',
+  '@deepseek-ai/dsh-client-store',
+  '@deepseek-ai/dsh-client-ui-slots',
+  '@deepseek-ai/dsh-client-ui-primitives',
+  '@deepseek-ai/dsh-client-ui-dockkit',
+])
+const CLIENT_DECLARATION_KEYS = new Set(['platform', 'inject', 'external', 'immediately'])
+const clientDeclaration = pkg.dsh?.client
+const patchText = patchFiles.filter((value) => typeof value === 'string').map((value) => read(value.replace(/^\.\//, ''))).join('\n')
+if (clientDeclaration === undefined) {
+  note('package.json declares no "dsh.client": this bundle ships no browser half, so its rows get no configuration form')
+} else {
+  if (typeof clientDeclaration !== 'object' || clientDeclaration === null || Array.isArray(clientDeclaration)) {
+    fail('package.json "dsh.client" must be an object')
+  } else {
+    for (const key of Object.keys(clientDeclaration)) {
+      if (!CLIENT_DECLARATION_KEYS.has(key)) fail(`package.json "dsh.client" carries "${key}", which the host validator does not read (allowed: platform, inject, external, immediately)`)
+    }
+    if (clientDeclaration.platform !== 'web') {
+      fail('package.json "dsh.client.platform" must be "web": the host scan keeps only web declarations')
+    }
+    for (const member of ['inject', 'external']) {
+      const value = clientDeclaration[member]
+      if (value === undefined) continue
+      if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) fail(`package.json "dsh.client.${member}" must be an array of strings`)
+    }
+    if (clientDeclaration.immediately !== undefined && typeof clientDeclaration.immediately !== 'boolean') {
+      fail('package.json "dsh.client.immediately" must be a boolean')
+    }
+  }
+
+  const clientExport = pkg.exports?.['./client']
+  const clientRelative =
+    typeof clientExport === 'string'
+      ? clientExport
+      : clientExport !== undefined && typeof clientExport === 'object' && typeof clientExport.default === 'string'
+        ? clientExport.default
+        : undefined
+  if (clientRelative === undefined) {
+    fail('package.json declares "dsh.client" but maps no "./client" bundle: the host throws "declares dsh.client but exports no \'./client\' bundle" at activation')
+  } else {
+    const rel = clientRelative.replace(/^\.\//, '')
+    if (!existsSync(join(root, rel))) fail(`browser half entry is missing: ${clientRelative}`)
+    else {
+      if (!shipped(rel)) fail(`"files" whitelist does not ship ${rel}, so an installed copy activates without its browser half`)
+      else pass(`browser half ${rel} exists and is shipped`)
+      const text = read(rel)
+      // Slot keys and module requests are read from code, not prose: this file's
+      // own header explains which slots it does NOT use, and a comment must not
+      // be able to satisfy — or trip — a contract check.
+      const code = stripComments(text)
+      if (!/window\.__ModuleLoader__\.load\s*\(/.test(code)) {
+        fail(`${rel} must register through window.__ModuleLoader__.load({ id, factory }) — the module system loads a classic script, not an ES module`)
+      }
+      const idMatch = /window\.__ModuleLoader__\.load\s*\(\s*\{[^}]*?\bid\s*:\s*['"]([^'"]+)['"]/.exec(code)
+      if (idMatch === null) fail(`${rel} must name the module it registers: window.__ModuleLoader__.load({ id: '${pkg.name}', factory })`)
+      else if (idMatch[1] !== pkg.name) fail(`${rel} registers id "${idMatch[1]}", but a browser half is its package's client bundle and must register "${pkg.name}"`)
+      else pass(`browser half registers the module id ${pkg.name}`)
+      if (!/['"]slots['"]/.test(code)) {
+        fail(`${rel} never names the "slots" service: a browser half reaches ctx.slots only by declaring it in its exported inject list`)
+      }
+      const external = new Set(Array.isArray(clientDeclaration?.external) ? clientDeclaration.external : [])
+      const requested = new Set()
+      for (const match of code.matchAll(/\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g)) requested.add(match[1])
+      if (requested.size === 0) note(`${rel} requires no platform module: React comes from the browser module table, so a browser half normally requires at least react`)
+      for (const specifier of requested) {
+        if (SEED_MODULES.has(specifier) || external.has(specifier)) continue
+        fail(`${rel} requires "${specifier}", which is neither a platform seed module nor listed in "dsh.client.external": the browser throws "require(\\"${specifier}\\") missed the module table" at first use`)
+      }
+      const harness = [...requested].filter((specifier) => specifier.startsWith('@deepseek-ai/dsh-client-'))
+      if (harness.length > 0) {
+        note(`${rel} loads Harness client packages as modules (${harness.join(', ')}): DSH's plugin authoring rules ask a plugin to ship its own controls instead, because those exports change without notice`)
+      }
+      const keys = new Set()
+      for (const match of code.matchAll(/\bkey\s*:\s*['"]([^'"]+)['"]/g)) keys.add(match[1])
+      const slotKeys = [...keys].filter((key) => key.includes('#'))
+      for (const key of slotKeys) {
+        const separator = key.indexOf('#')
+        const bundle = key.slice(0, separator)
+        const rowId = key.slice(separator + 1)
+        if (bundle !== pkg.name) fail(`${rel} registers slot key "${key}", whose package name must be this bundle's name "${pkg.name}"`)
+        else if (!new RegExp(`(^|\\s)id\\s*:\\s*['"]?${rowId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]?(\\s|$)`).test(patchText)) {
+          fail(`${rel} registers slot key "${key}", but no declared bundle patch inserts a row with id "${rowId}" — the keyed slot then names a row that does not exist and no error is raised`)
+        } else pass(`slot key ${key} names a row this bundle's patch declares`)
+      }
+      if (/plugins\.row\.config/.test(code) && slotKeys.length === 0) {
+        fail(`${rel} registers into the keyed slot "plugins.row.config" without a literal "<package name>#<row id>" key — write the key as a string literal so this check can prove it names a row the bundle's patch declares`)
+      }
+      if (/plugins\.bundle\.config/.test(code)) {
+        if (keys.has(pkg.name)) pass(`bundle configuration key ${pkg.name} is this package's name`)
+        else fail(`${rel} registers into the keyed slot "plugins.bundle.config" without a literal key equal to this bundle's package name "${pkg.name}" — the page dispatches that key when it opens this bundle's card, and a mismatch renders nothing`)
+      }
+    }
+  }
+  if (!existsSync(join(root, 'client'))) note('package.json declares "dsh.client" but there is no client/ directory')
 }
 
 // --------------------------------------------------- harness imports vs peers
@@ -188,8 +309,13 @@ const label = `${pkg.name}@${pkg.version}`
 if (problems.length > 0) {
   console.error(`✖ ${label}: ${problems.length} contract problem(s) under ${root}\n`)
   for (const problem of problems) console.error(`  - ${problem}`)
+  if (notes.length > 0) {
+    console.error('')
+    for (const line of notes) console.error(`  ! ${line}`)
+  }
   console.error('')
   process.exit(1)
 }
 console.log(`✔ ${label}: plugin contract OK`)
 for (const line of verified) console.log(`  · ${line}`)
+for (const line of notes) console.log(`  ! ${line}`)
