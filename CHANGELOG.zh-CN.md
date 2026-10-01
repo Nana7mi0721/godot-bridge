@@ -12,7 +12,7 @@
 - **`Godot engine path` 现在可以在 GUI 里编辑。** 本组合包自带浏览器半侧（`client/client.js`，在 manifest 里由 `dsh.client` 声明），以包名为键注册本组合包的配置区（keyed slot `plugins.bundle.config`）——插件页的 **godot-bridge 卡片页**因此直接在描述与行列表之间显示路径字段，带**保存**与针对本 profile 覆盖值的**恢复默认**。（按行注册的 `plugins.row.config`（键为 `<包名>#<行 id>`）会把同一个表单放到深一层、藏在行上的「配置」控件后面；等到一个组合包拥有多个可独立配置的行时它才是正确选择，而本包只有一个。）保存走的是 DSH 设置的同一条路，落到 `godot_set_engine_path` 写入的同一行 `cordis.patch.yml`，所以该字段、那个工具、以及手写的 `config:` 块是同一个值的三种视角，改动立即生效、无需重启。关闭那一行时配置区随之消失——浏览器半侧属于那一行。本条关闭了下方 0.1.8 记录的已知限制。
 - `npm run check` 现在同时校验浏览器半侧，把「让组合包失去表单」这一类错误变成构建期失败，而不是运行期静默失败：`dsh.client` 声明（合法成员、`platform: 'web'`、字符串数组 `inject`/`external`、布尔 `immediately`）、`exports["./client"]` 目标存在且被 `files` 覆盖、`window.__ModuleLoader__.load({ id })` 的 id 等于包名、`slots` 服务声明、每个 `require()` 说明符是否落在 web 客户端平台种子模块表或 `dsh.client.external` 内、`plugins.bundle.config` 的键是否等于本包名，以及 `plugins.row.config` 的键是否指向本包 patch 声明的行。slot 键与模块请求都只从**代码**读，注释不能充当通过条件。
 
-### 兼容性
+### 变更
 
 - 浏览器半侧在无法承载它的运行时上保持静默：0.1.6–0.1.x 已有这些 slot，但没有可读该值的设置表单服务，因此注册包在 `ctx.inject(['configForms'], …)` 之内，那些运行时维持原有行为（没有 GUI 字段，仍用 `godot_set_engine_path` 与 `settings.yaml`）。比 0.1.0-rc.7 更早、根本不扫描 `dsh.client` 的运行时忽略该 manifest 成员。
 
