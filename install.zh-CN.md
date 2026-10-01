@@ -6,10 +6,11 @@
 
 ```
 plugin/godot-bridge.mjs           # 插件本体（标准 DSH 模块：命名导出 name/inject/apply）
+client/client.js                  # 浏览器半侧：插件页上该行的配置页（dsh.client）
 plugin/mcp_interaction_server.gd  # 取自 godot-mcp（MIT）——游戏内 TCP 服务器 autoload
 plugin/godot_operations.gd        # 取自 godot-mcp（MIT）——headless 操作脚本
 plugin/validate_script.gd         # 取自 godot-mcp（MIT）——GDScript 编译检查
-package.json                      # dsh.bundle manifest（供 `dsh plugin add` 安装）
+package.json                      # dsh.bundle + dsh.client manifest（供 `dsh plugin add` 安装）
 cordis.patch.yml                  # bundle patch 层（插入工具行）
 ```
 
@@ -61,7 +62,7 @@ dsh plugin --profile web remove godot-bridge
 
   `godotPath` 是插件自身配置里的 `.volatile()` 字段：按活值读取（volatile 字段更新不需要 remount 插件）。取值位置：
 
-  - **DSH 0.2.x** —— `tool-godot-bridge` 行的配置：用 `godot_set_engine_path` 工具设置（它经 `ctx.configEditor.edit(...)` 写入 profile patch，立即生效、无需重启），或在 `$DSH_HOME/profiles/<profile>/cordis.patch.yml` 里给该行加 `config:` 块。工具会在写入前校验文件存在，并返回 `persisted: 'profile-patch'`。
+  - **DSH 0.2.x** —— `tool-godot-bridge` 行的配置，有三条等价入口：插件页该行的**配置**控件（见下文[DSH 0.2 上的 GUI 字段](#dsh-02-上的-gui-字段)）、`godot_set_engine_path` 工具（它经 `ctx.configEditor.edit(...)` 写入 profile patch，立即生效、无需重启），或在 `$DSH_HOME/profiles/<profile>/cordis.patch.yml` 里给该行手写 `config:` 块。工具会在写入前校验文件存在，并返回 `persisted: 'profile-patch'`；GUI 字段是一次纯文本保存（浏览器无法 stat 文件），请直接指向真实 exe。
 
     ```yaml
     - id: tool-godot-bridge
@@ -73,11 +74,13 @@ dsh plugin --profile web remove godot-bridge
 - 端口/主机：写死 `127.0.0.1:9090`（与 `McpInteractionServer` autoload 默认一致）。
 - headless 脚本定位：插件按模块相对路径（`import.meta.url`）；传显式 `ops_script` / `validate_script` 参数可覆盖。
 
-## DSH 0.2 上没有 GUI 字段
+## DSH 0.2 上的 GUI 字段
 
-DSH 0.2 的插件页只为「**客户端组件**注册了 keyed slot `plugins.row.config`」的行渲染配置表单——没有任何内置包注册该插槽，因此插件必须自带客户端入口（manifest 里的 `dsh.client`）。godot-bridge 没有，所以它的行**没有设置表单**，也没有 `Godot engine path` 字段。
+只有当某个**浏览器半侧**以 `<包名>#<行 id>` 为键注册 keyed slot `plugins.row.config` 时，DSH 才会为那一行渲染配置表单。本组合包自带该浏览器半侧（`client/client.js`，在 manifest 里由 `dsh.client` 声明），注册的键是 `godot-bridge#tool-godot-bridge`——因此插件页的 `tool-godot-bridge` 行上会出现**配置**控件，其页面里有 `Godot 可执行文件路径` 字段、**保存**，以及针对本 profile 覆盖值的**恢复默认**。
 
-这是呈现层缺口，不是配置损坏：Host 侧是正确的（`settings.describe()` 能为 `tool-godot-bridge` 行投影出 `godotPath`），上面两条设置路径也都可用。该缺口已单独作为功能请求跟踪。
+保存走的是 DSH 设置的同一条路：落到本 profile `cordis.patch.yml` 的 `tool-godot-bridge` 行，也就是 `godot_set_engine_path` 写入的同一处。所以该字段、那个工具、以及手写的 `config:` 块是同一个值的三种视角，改动立即生效、无需重启。关闭该行时控件随之消失——浏览器半侧属于那一行。
+
+在 DSH 0.1.6–0.1.x 上，该 slot 虽然存在，但运行时没有设置表单服务、也不会把可保存的表单交给条目，因此浏览器半侧在那里不注册，该行维持上文[配置](#配置)一节描述的行为（没有 GUI 字段，用工具或 `settings.yaml`）。
 
 ## 维护
 

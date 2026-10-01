@@ -13,11 +13,16 @@
  * 配置（官方 cordis Config，面向用户）：
  *   godotPath —— Godot 可执行文件完整路径，可选、面向用户。Godot 是便携
  *   exe，可能位于任意位置，因此插件作者/部署层不预设该路径（cordis.patch.yml
- *   的 row config 留空）。该字段为 volatile：DSH ≥ 0.2 会把它投影到插件设置页，
- *   并通过 configEditor 写回 profile 的 cordis.patch.yml（立即生效、无需重启）；
- *   DSH 0.1.x 走旧的 settings.register 作用域兜底。未设置时 Godot 相关工具
- *   回退到从 PATH 解析 `godot`，再失败才返回指引。语义校验（路径存在）由写入
- *   工具 godot_set_engine_path 在写前承担，而非 apply 里 throw。
+ *   的 row config 留空）。该字段为 volatile：DSH ≥ 0.2 会把它投影到设置文档，
+ *   由浏览器半 client/client.js 注册该行的配置页（keyed slot
+ *   `plugins.row.config`，键为 `godot-bridge#tool-godot-bridge`），在插件页
+ *   tool-godot-bridge 行上生成「配置」入口；表单写入经设置服务落到与本插件
+ *   工具 godot_set_engine_path 相同的 profile cordis.patch.yml 层（立即生效、
+ *   无需重启）。DSH 0.1.6–0.1.x 已有该 slot，但没有表单服务与表单 props，
+ *   因此浏览器半注入不到 configForms 时不注册，行为与没有 GUI 字段时一致。
+ *   DSH 0.1.x 上插件侧走旧的 settings.register 作用域兜底。未设置时 Godot 相关
+ *   工具回退到从 PATH 解析 `godot`，再失败才返回指引。语义校验（路径存在）由
+ *   写入工具 godot_set_engine_path 在写前承担，而非 apply 里 throw。
  * 工具参数 godot_path 优先于配置值，其次 PATH 解析兜底。
  */
 
@@ -36,11 +41,17 @@ export const inject = ['subprocess', 'timer', 'tools', 'fs', 'sandboxPolicy', 's
  * Runtime configuration schema (official cordis Config).
  * `godotPath` is USER-facing and OPTIONAL: Godot is a portable exe that can
  * live anywhere, so the plugin author never presets it (cordis.patch.yml stays
- * empty). The field is volatile: DSH >= 0.2 projects it into the plugin's
- * settings page and persists edits through @deepseek-ai/dsh-config-editor into
- * the active profile patch, applied immediately; DSH 0.1.x falls back to the
- * legacy settings scope. When unset, Godot-needing tools fall back to resolving
- * `godot` on PATH. (Plain ESM — no TS interface.)
+ * empty). The field is volatile: DSH >= 0.2 projects it into the settings
+ * document, and the browser half (client/client.js) registers the row's
+ * configuration page (keyed slot `plugins.row.config`, key
+ * `godot-bridge#tool-godot-bridge`), which is what puts a Configure control on
+ * the tool-godot-bridge row of the Plugins page. Form saves go through the
+ * settings service into the SAME profile cordis.patch.yml layer this plugin's
+ * godot_set_engine_path tool writes, applied immediately; DSH 0.1.6-0.1.x
+ * declares that slot but has no form service, so the browser half registers
+ * nothing there and the row behaves as it did before. DSH 0.1.x falls back to
+ * the legacy settings scope. When unset, Godot-needing tools fall back to
+ * resolving `godot` on PATH. (Plain ESM — no TS interface.)
  */
 // `godotPath` is a VOLATILE field on DSH >= 0.2: the settings form projects
 // volatile fields, and such a field is updated in place without remounting the
@@ -157,7 +168,7 @@ export function apply(ctx, config) {
         return systemPrompt.section({
           name: 'godot-bridge:config-guidance',
           order: 150,
-          text: 'GODOT ENGINE PATH - godot-bridge drives a Godot game. If a godot_* tool reports that no Godot engine path is configured, do NOT search the filesystem for Godot. Instead, ask the user where their Godot executable is, then persist it with the godot_set_engine_path tool. On DSH 0.2+ that tool writes the profile patch and applies immediately (DSH renders no settings form for this plugin\'s row — see issue #9); the user can alternatively add a `config: { godotPath: ... }` block to the `tool-godot-bridge` row in the profile\'s cordis.patch.yml, or add `godot` to PATH. On DSH 0.1.x the path lives in the `godot-bridge:` section of settings.yaml. / 中文：godot-bridge 需要一个 Godot 引擎路径。若 godot_* 工具提示未配置引擎路径，不要自行搜索文件系统。请向用户询问其 Godot 可执行文件位置，然后用 godot_set_engine_path 工具保存——DSH 0.2+ 上该工具写 profile patch 并立即生效（DSH 不为本插件的行渲染设置表单，见 issue #9）；用户也可改为在 profile 的 cordis.patch.yml 中给 `tool-godot-bridge` 行加 `config: { godotPath: ... }` 块，或把 `godot` 加入 PATH。DSH 0.1.x 上该路径位于 settings.yaml 的 `godot-bridge:` 段。',
+          text: 'GODOT ENGINE PATH - godot-bridge drives a Godot game. If a godot_* tool reports that no Godot engine path is configured, do NOT search the filesystem for Godot. Instead, ask the user where their Godot executable is, then persist it with the godot_set_engine_path tool. On DSH 0.2+ that tool writes the profile patch and applies immediately, and the same value is editable in the GUI at Plugins -> godot-bridge -> the tool-godot-bridge row -> Configure (its "Godot engine path" field); the user can alternatively add a `config: { godotPath: ... }` block to the `tool-godot-bridge` row in the profile\'s cordis.patch.yml, or add `godot` to PATH. On DSH 0.1.x the path lives in the `godot-bridge:` section of settings.yaml. / 中文：godot-bridge 需要一个 Godot 引擎路径。若 godot_* 工具提示未配置引擎路径，不要自行搜索文件系统。请向用户询问其 Godot 可执行文件位置，然后用 godot_set_engine_path 工具保存——DSH 0.2+ 上该工具写 profile patch 并立即生效，同一数值也可在 GUI 里编辑：插件页 → godot-bridge → tool-godot-bridge 行 →「配置」，即其中的「Godot 可执行文件路径」字段；用户也可改为在 profile 的 cordis.patch.yml 中给 `tool-godot-bridge` 行加 `config: { godotPath: ... }` 块，或把 `godot` 加入 PATH。DSH 0.1.x 上该路径位于 settings.yaml 的 `godot-bridge:` 段。',
         })
       })
       ctx.effect(function () {
@@ -177,7 +188,7 @@ export function apply(ctx, config) {
     } catch (e) {}
   }
 
-  const GODOT_PATH_GUIDANCE = 'No Godot engine path is available. Ask the user where their Godot executable is and persist it with the godot_set_engine_path tool (it writes the profile patch and applies immediately on DSH 0.2+), add `godot` to PATH, pass the godot_path tool argument, or set `godotPath` by hand — a `config:` block on the `tool-godot-bridge` row of the profile\'s cordis.patch.yml on DSH 0.2+, the `godot-bridge:` section of settings.yaml on DSH 0.1.x. DSH renders no settings form for this plugin\'s row (issue #9), so there is no GUI field to point the user at.'
+  const GODOT_PATH_GUIDANCE = 'No Godot engine path is available. Ask the user where their Godot executable is and persist it with the godot_set_engine_path tool (it writes the profile patch and applies immediately on DSH 0.2+), set it in the GUI (Plugins -> godot-bridge -> the tool-godot-bridge row -> Configure), add `godot` to PATH, pass the godot_path tool argument, or set `godotPath` by hand — a `config:` block on the `tool-godot-bridge` row of the profile\'s cordis.patch.yml on DSH 0.2+, the `godot-bridge:` section of settings.yaml on DSH 0.1.x.'
 
   // ── legacy-config migration ─────────────────────────────────────────────
   // DSH 0.2 imports a leftover settings.yaml by plugin ENTRY ID, and this
@@ -1204,7 +1215,7 @@ export function apply(ctx, config) {
           }
           return { success: true, godot_path: p, persisted: 'settings', note: 'Engine path saved to settings (hot-reloaded; no restart needed).' }
         }
-        return { error: 'no configuration service is available in this session, so the engine path cannot be persisted. Ask the user to set the `godotPath` option by hand on the `tool-godot-bridge` row of the profile\'s cordis.patch.yml (DSH renders no settings form for this row — issue #9), or to pass godot_path per call.' }
+        return { error: 'no configuration service is available in this session, so the engine path cannot be persisted. Ask the user to set it in the GUI (Plugins -> godot-bridge -> the tool-godot-bridge row -> Configure) or by hand on the `tool-godot-bridge` row of the profile\'s cordis.patch.yml, or to pass godot_path per call.' }
       },
     }),
 

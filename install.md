@@ -6,10 +6,11 @@
 
 ```
 plugin/godot-bridge.mjs           # the plugin (standard DSH module: named exports name/inject/apply)
+client/client.js                  # browser half: the row's config page on the Plugins page (dsh.client)
 plugin/mcp_interaction_server.gd  # vendored from godot-mcp (MIT) — in-game TCP server autoload
 plugin/godot_operations.gd        # vendored from godot-mcp (MIT) — headless ops script
 plugin/validate_script.gd         # vendored from godot-mcp (MIT) — GDScript compile-check
-package.json                      # dsh.bundle manifest (for `dsh plugin add`)
+package.json                      # dsh.bundle + dsh.client manifest (for `dsh plugin add`)
 cordis.patch.yml                  # bundle patch layer (inserts the tool row)
 ```
 
@@ -61,7 +62,7 @@ Notes:
 
   `godotPath` is a `.volatile()` field of the plugin's own config: it is read live (volatile fields update without remounting the plugin). Where the value lives:
 
-  - **DSH 0.2.x** — the config of the `tool-godot-bridge` row: set it with the `godot_set_engine_path` tool (it writes the profile patch through `ctx.configEditor.edit(...)` and applies immediately — no restart), or add a `config:` block on that row in `$DSH_HOME/profiles/<profile>/cordis.patch.yml`. The tool checks that the file exists before writing and reports `persisted: 'profile-patch'`.
+  - **DSH 0.2.x** — the config of the `tool-godot-bridge` row, reachable in three equivalent ways: the **Configure** control on that row of the Plugins page (see [GUI field](#gui-field-on-dsh-02) below), the `godot_set_engine_path` tool (it writes the profile patch through `ctx.configEditor.edit(...)` and applies immediately — no restart), or a hand-written `config:` block on that row in `$DSH_HOME/profiles/<profile>/cordis.patch.yml`. The tool checks that the file exists before writing and reports `persisted: 'profile-patch'`; the GUI field is a plain text save (a browser cannot stat files), so point it at the real exe.
 
     ```yaml
     - id: tool-godot-bridge
@@ -73,11 +74,13 @@ Notes:
 - Port/host: hardcoded `127.0.0.1:9090` (matches the `McpInteractionServer` autoload default).
 - Headless scripts: the plugin locates them relative to the module (`import.meta.url`); pass an explicit `ops_script` / `validate_script` argument to override.
 
-## No GUI field on DSH 0.2
+## GUI field on DSH 0.2
 
-DSH 0.2's Plugins page renders a configuration form only for rows whose **client component** registers the keyed slot `plugins.row.config` — no built-in package registers it, so a plugin must ship its own client entry (`dsh.client` in its manifest). godot-bridge ships none, so its row has **no settings form** and no `Godot engine path` field.
+DSH renders a configuration form for a row only when a browser half registers the keyed slot `plugins.row.config` under `<package name>#<row id>`. This bundle ships that half (`client/client.js`, declared through `dsh.client` in its manifest), and it registers `godot-bridge#tool-godot-bridge` — so the `tool-godot-bridge` row on the Plugins page carries a **Configure** control whose page holds the `Godot engine path` field, a **Save**, and a **Reset to default** for a path this profile overrides.
 
-This is a presentation gap, not a broken config: the Host side is correct (`settings.describe()` projects `godotPath` for the `tool-godot-bridge` row), and the two paths above both work. Tracked separately as a feature request.
+A save travels the same road as the rest of DSH's settings: it lands on the `tool-godot-bridge` row of this profile's `cordis.patch.yml`, which is exactly where `godot_set_engine_path` writes, so the field, that tool, and a hand-written `config:` block are three views of one value — and a change applies without a restart. Switching the row off withdraws the control with it, because the browser half belongs to that row.
+
+On DSH 0.1.6–0.1.x the slot exists but the runtime has no settings-form service and hands the entry no form to save through, so the browser half registers nothing there and the row keeps the behaviour described under [Config](#config) above (no GUI field, use the tool or `settings.yaml`).
 
 ## Maintenance
 
