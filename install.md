@@ -32,15 +32,15 @@ The same command installs a local checkout or a tarball:
 
 ```sh
 dsh plugin --profile web add ./path/to/godot-bridge     # local checkout
-dsh plugin --profile web add ./godot-bridge-0.1.8.tgz   # pnpm pack output
+dsh plugin --profile web add ./godot-bridge-0.2.0.tgz   # pnpm pack output
 ```
 
 ### Local development (`link:`)
 
-A `link:` dependency (`"godot-bridge": "link:/path/to/godot-bridge"` — what pnpm writes when you add a local checkout to the profile) turns the profile's `node_modules/godot-bridge` into a symlink to your working copy, so edits are picked up without reinstalling. It is also the one install shape the launcher's runtime resolution cannot route by itself: the plugin's real path sits outside the profiles tree, and a *linked root* gets harness packages routed only for names the plugin declares in its `peerDependencies`. That declaration is why 0.1.8 exists — without it the whole bundle fails to import (`ERR_MODULE_NOT_FOUND: Cannot find package '@deepseek-ai/dsh-tools' imported from …godot-bridge.mjs`) and none of the seventeen tools registers.
+A `link:` dependency (`"godot-bridge": "link:/path/to/godot-bridge"` — what pnpm writes when you add a local checkout to the profile) turns the profile's `node_modules/godot-bridge` into a symlink to your working copy, so code edits take effect without reinstalling: the browser half (`client/client.js`) is hot-swapped by the host's artifact polling within about a second, and the plugin's host half is re-imported on a profile reload. A `package.json` edit is the exception — see below. It is also the one install shape the launcher's runtime resolution cannot route by itself: the plugin's real path sits outside the profiles tree, and a *linked root* gets harness packages routed only for names the plugin declares in its `peerDependencies`. That declaration is why 0.1.8 exists — without it the whole bundle fails to import (`ERR_MODULE_NOT_FOUND: Cannot find package '@deepseek-ai/dsh-tools' imported from …godot-bridge.mjs`) and none of the seventeen tools registers.
 
-- Prefer a non-symlinked install when you do not need live edits: `pnpm pack`, then `dsh plugin --profile web add ./godot-bridge-0.1.8.tgz` (reinstall after each change).
-- After changing the manifest or the plugin, reload the profile (Plugins page) or restart DSH, then confirm the seventeen tools. `npm run check` guards the contract and `scripts/diagnose-dsh-resolution.mjs` reports what the launcher actually routes — see [README → DSH 0.2+ compatibility](README.md#dsh-02-compatibility-and-troubleshooting).
+- Prefer a non-symlinked install when you do not need live edits: `pnpm pack`, then `dsh plugin --profile web add ./godot-bridge-0.2.0.tgz` (reinstall after each change).
+- After changing the plugin's host half, reload the profile (Plugins page) or restart DSH, then confirm the seventeen tools. After changing `package.json` — the `dsh.client` declaration, `exports`, `files` — **restart DSH**: the client-module scan reads a package's manifest once per Loader row and caches it until the host restarts, so a reload is not enough. `npm run check` guards the contract and `scripts/diagnose-dsh-resolution.mjs` reports what the launcher actually routes — see [README → DSH 0.2+ compatibility](README.md#dsh-02-compatibility-and-troubleshooting).
 
 ## Uninstall
 
@@ -84,8 +84,8 @@ On DSH 0.1.6–0.1.x the slot exists but the runtime has no settings-form servic
 
 ## Maintenance
 
-- Editing `plugin/godot-bridge.mjs` needs no rebuild (plain ESM).
-- After changing the plugin, reinstall it into the profile (`dsh plugin --profile web add github:Smalldy/godot-bridge` again) and restart the session. A `link:` install needs no reinstall — reload the profile (Plugins page) or restart DSH.
+- Editing `plugin/godot-bridge.mjs` needs no rebuild (plain ESM), and editing `client/client.js` needs no rebuild either: the host polls each bundle's artifact and hot-swaps it within about a second.
+- After changing the plugin, reinstall it into the profile (`dsh plugin --profile web add github:Smalldy/godot-bridge` again) and restart the session. A `link:` install needs no reinstall — reload the profile (Plugins page) for host-half edits, and restart DSH after a `package.json` edit, whose `dsh.client`/`exports`/`files` facts are read once per Loader row and cached until restart.
 - Before committing or publishing, run `npm run check` (static dependency contract: declared `@deepseek-ai/*` peers, bundle patch, entry exports). `node scripts/diagnose-dsh-resolution.mjs --profile <profile>` re-runs the launcher's resolution and prints what it routes (development only; needs the installed DSH app).
 - The manifest's `peerDependencies` change what DSH may load: a declared `@deepseek-ai/dsh-*` range that does not match the running runtime makes DSH skip the bundle with an explicit message instead of failing at import.
 - **Publishing an update**: bump `version` in `package.json` and push — the plugin's boot-time check (see README "Update notices") uses that version as the release marker, so existing installs only see a notice when it is higher than what they have.
