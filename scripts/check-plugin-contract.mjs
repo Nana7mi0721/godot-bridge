@@ -153,19 +153,23 @@ if (clientDeclaration === undefined) {
       if (!shipped(rel)) fail(`"files" whitelist does not ship ${rel}, so an installed copy activates without its browser half`)
       else pass(`browser half ${rel} exists and is shipped`)
       const text = read(rel)
-      if (!/window\.__ModuleLoader__\.load\s*\(/.test(text)) {
+      // Slot keys and module requests are read from code, not prose: this file's
+      // own header explains which slots it does NOT use, and a comment must not
+      // be able to satisfy — or trip — a contract check.
+      const code = stripComments(text)
+      if (!/window\.__ModuleLoader__\.load\s*\(/.test(code)) {
         fail(`${rel} must register through window.__ModuleLoader__.load({ id, factory }) — the module system loads a classic script, not an ES module`)
       }
-      const idMatch = /window\.__ModuleLoader__\.load\s*\(\s*\{[^}]*?\bid\s*:\s*['"]([^'"]+)['"]/.exec(text)
+      const idMatch = /window\.__ModuleLoader__\.load\s*\(\s*\{[^}]*?\bid\s*:\s*['"]([^'"]+)['"]/.exec(code)
       if (idMatch === null) fail(`${rel} must name the module it registers: window.__ModuleLoader__.load({ id: '${pkg.name}', factory })`)
       else if (idMatch[1] !== pkg.name) fail(`${rel} registers id "${idMatch[1]}", but a browser half is its package's client bundle and must register "${pkg.name}"`)
       else pass(`browser half registers the module id ${pkg.name}`)
-      if (!/['"]slots['"]/.test(text)) {
+      if (!/['"]slots['"]/.test(code)) {
         fail(`${rel} never names the "slots" service: a browser half reaches ctx.slots only by declaring it in its exported inject list`)
       }
       const external = new Set(Array.isArray(clientDeclaration?.external) ? clientDeclaration.external : [])
       const requested = new Set()
-      for (const match of text.matchAll(/\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g)) requested.add(match[1])
+      for (const match of code.matchAll(/\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g)) requested.add(match[1])
       if (requested.size === 0) note(`${rel} requires no platform module: React comes from the browser module table, so a browser half normally requires at least react`)
       for (const specifier of requested) {
         if (SEED_MODULES.has(specifier) || external.has(specifier)) continue
@@ -176,7 +180,7 @@ if (clientDeclaration === undefined) {
         note(`${rel} loads Harness client packages as modules (${harness.join(', ')}): DSH's plugin authoring rules ask a plugin to ship its own controls instead, because those exports change without notice`)
       }
       const keys = new Set()
-      for (const match of text.matchAll(/\bkey\s*:\s*['"]([^'"]+)['"]/g)) keys.add(match[1])
+      for (const match of code.matchAll(/\bkey\s*:\s*['"]([^'"]+)['"]/g)) keys.add(match[1])
       const slotKeys = [...keys].filter((key) => key.includes('#'))
       for (const key of slotKeys) {
         const separator = key.indexOf('#')
@@ -187,8 +191,12 @@ if (clientDeclaration === undefined) {
           fail(`${rel} registers slot key "${key}", but no declared bundle patch inserts a row with id "${rowId}" — the keyed slot then names a row that does not exist and no error is raised`)
         } else pass(`slot key ${key} names a row this bundle's patch declares`)
       }
-      if (/plugins\.row\.config/.test(text) && slotKeys.length === 0) {
+      if (/plugins\.row\.config/.test(code) && slotKeys.length === 0) {
         fail(`${rel} registers into the keyed slot "plugins.row.config" without a literal "<package name>#<row id>" key — write the key as a string literal so this check can prove it names a row the bundle's patch declares`)
+      }
+      if (/plugins\.bundle\.config/.test(code)) {
+        if (keys.has(pkg.name)) pass(`bundle configuration key ${pkg.name} is this package's name`)
+        else fail(`${rel} registers into the keyed slot "plugins.bundle.config" without a literal key equal to this bundle's package name "${pkg.name}" — the page dispatches that key when it opens this bundle's card, and a mismatch renders nothing`)
       }
     }
   }

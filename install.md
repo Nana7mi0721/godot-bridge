@@ -62,7 +62,7 @@ Notes:
 
   `godotPath` is a `.volatile()` field of the plugin's own config: it is read live (volatile fields update without remounting the plugin). Where the value lives:
 
-  - **DSH 0.2.x** — the config of the `tool-godot-bridge` row, reachable in three equivalent ways: the **Configure** control on that row of the Plugins page (see [GUI field](#gui-field-on-dsh-02) below), the `godot_set_engine_path` tool (it writes the profile patch through `ctx.configEditor.edit(...)` and applies immediately — no restart), or a hand-written `config:` block on that row in `$DSH_HOME/profiles/<profile>/cordis.patch.yml`. The tool checks that the file exists before writing and reports `persisted: 'profile-patch'`; the GUI field is a plain text save (a browser cannot stat files), so point it at the real exe.
+  - **DSH 0.2.x** — the config of the `tool-godot-bridge` row, reachable in three equivalent ways: the `Godot engine path` field on the **godot-bridge card's page** of the Plugins page (see [GUI field](#gui-field-on-dsh-02) below), the `godot_set_engine_path` tool (it writes the profile patch through `ctx.configEditor.edit(...)` and applies immediately — no restart), or a hand-written `config:` block on that row in `$DSH_HOME/profiles/<profile>/cordis.patch.yml`. The tool checks that the file exists before writing and reports `persisted: 'profile-patch'`; the GUI field is a plain text save (a browser cannot stat files), so point it at the real exe.
 
     ```yaml
     - id: tool-godot-bridge
@@ -76,11 +76,11 @@ Notes:
 
 ## GUI field on DSH 0.2
 
-DSH renders a configuration form for a row only when a browser half registers the keyed slot `plugins.row.config` under `<package name>#<row id>`. This bundle ships that half (`client/client.js`, declared through `dsh.client` in its manifest), and it registers `godot-bridge#tool-godot-bridge` — so the `tool-godot-bridge` row on the Plugins page carries a **Configure** control whose page holds the `Godot engine path` field, a **Save**, and a **Reset to default** for a path this profile overrides.
+DSH renders a bundle's configuration section only when a browser half registers the keyed slot `plugins.bundle.config` under the bundle's package name (a row's own form would take the keyed slot `plugins.row.config` under `<package name>#<row id>`, which opens one level deeper and is the right choice once a bundle has several independently configurable rows). This bundle ships that half (`client/client.js`, declared through `dsh.client` in its manifest) and registers `godot-bridge`, so opening the **godot-bridge** card on the Plugins page shows the `Godot engine path` field between the description and the row list, with a **Save** and a **Reset to default** for a path this profile overrides.
 
-A save travels the same road as the rest of DSH's settings: it lands on the `tool-godot-bridge` row of this profile's `cordis.patch.yml`, which is exactly where `godot_set_engine_path` writes, so the field, that tool, and a hand-written `config:` block are three views of one value — and a change applies without a restart. Switching the row off withdraws the control with it, because the browser half belongs to that row.
+A save travels the same road as the rest of DSH's settings: it lands on the `tool-godot-bridge` row of this profile's `cordis.patch.yml`, which is exactly where `godot_set_engine_path` writes, so the field, that tool, and a hand-written `config:` block are three views of one value — and a change applies without a restart. Switching that row off withdraws the section with it, because the browser half belongs to that row.
 
-On DSH 0.1.6–0.1.x the slot exists but the runtime has no settings-form service and hands the entry no form to save through, so the browser half registers nothing there and the row keeps the behaviour described under [Config](#config) above (no GUI field, use the tool or `settings.yaml`).
+On DSH 0.1.6–0.1.x the slot exists but the runtime has no settings-form service to read the value through, so the browser half registers nothing there and the card keeps the behaviour described under [Config](#config) above (no GUI field, use the tool or `settings.yaml`).
 
 ## Maintenance
 

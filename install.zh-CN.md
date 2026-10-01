@@ -62,7 +62,7 @@ dsh plugin --profile web remove godot-bridge
 
   `godotPath` 是插件自身配置里的 `.volatile()` 字段：按活值读取（volatile 字段更新不需要 remount 插件）。取值位置：
 
-  - **DSH 0.2.x** —— `tool-godot-bridge` 行的配置，有三条等价入口：插件页该行的**配置**控件（见下文[DSH 0.2 上的 GUI 字段](#dsh-02-上的-gui-字段)）、`godot_set_engine_path` 工具（它经 `ctx.configEditor.edit(...)` 写入 profile patch，立即生效、无需重启），或在 `$DSH_HOME/profiles/<profile>/cordis.patch.yml` 里给该行手写 `config:` 块。工具会在写入前校验文件存在，并返回 `persisted: 'profile-patch'`；GUI 字段是一次纯文本保存（浏览器无法 stat 文件），请直接指向真实 exe。
+  - **DSH 0.2.x** —— `tool-godot-bridge` 行的配置，有三条等价入口：插件页 **godot-bridge 卡片页**上的 `Godot 可执行文件路径` 字段（见下文[DSH 0.2 上的 GUI 字段](#dsh-02-上的-gui-字段)）、`godot_set_engine_path` 工具（它经 `ctx.configEditor.edit(...)` 写入 profile patch，立即生效、无需重启），或在 `$DSH_HOME/profiles/<profile>/cordis.patch.yml` 里给该行手写 `config:` 块。工具会在写入前校验文件存在，并返回 `persisted: 'profile-patch'`；GUI 字段是一次纯文本保存（浏览器无法 stat 文件），请直接指向真实 exe。
 
     ```yaml
     - id: tool-godot-bridge
@@ -76,11 +76,11 @@ dsh plugin --profile web remove godot-bridge
 
 ## DSH 0.2 上的 GUI 字段
 
-只有当某个**浏览器半侧**以 `<包名>#<行 id>` 为键注册 keyed slot `plugins.row.config` 时，DSH 才会为那一行渲染配置表单。本组合包自带该浏览器半侧（`client/client.js`，在 manifest 里由 `dsh.client` 声明），注册的键是 `godot-bridge#tool-godot-bridge`——因此插件页的 `tool-godot-bridge` 行上会出现**配置**控件，其页面里有 `Godot 可执行文件路径` 字段、**保存**，以及针对本 profile 覆盖值的**恢复默认**。
+只有当某个**浏览器半侧**以**包名**为键注册 keyed slot `plugins.bundle.config` 时，DSH 才会渲染该组合包的配置区（某一**行**自己的表单则用 keyed slot `plugins.row.config`、以 `<包名>#<行 id>` 为键，位置更深一层；组合包有多个可独立配置的行时它才是正确选择）。本组合包自带该浏览器半侧（`client/client.js`，在 manifest 里由 `dsh.client` 声明）并注册 `godot-bridge`，因此在插件页打开 **godot-bridge** 卡片时，`Godot 可执行文件路径` 字段就出现在描述与行列表之间，带**保存**与针对本 profile 覆盖值的**恢复默认**。
 
-保存走的是 DSH 设置的同一条路：落到本 profile `cordis.patch.yml` 的 `tool-godot-bridge` 行，也就是 `godot_set_engine_path` 写入的同一处。所以该字段、那个工具、以及手写的 `config:` 块是同一个值的三种视角，改动立即生效、无需重启。关闭该行时控件随之消失——浏览器半侧属于那一行。
+保存走的是 DSH 设置的同一条路：落到本 profile `cordis.patch.yml` 的 `tool-godot-bridge` 行，也就是 `godot_set_engine_path` 写入的同一处。所以该字段、那个工具、以及手写的 `config:` 块是同一个值的三种视角，改动立即生效、无需重启。关闭那一行时配置区随之消失——浏览器半侧属于那一行。
 
-在 DSH 0.1.6–0.1.x 上，该 slot 虽然存在，但运行时没有设置表单服务、也不会把可保存的表单交给条目，因此浏览器半侧在那里不注册，该行维持上文[配置](#配置)一节描述的行为（没有 GUI 字段，用工具或 `settings.yaml`）。
+在 DSH 0.1.6–0.1.x 上，该 slot 虽然存在，但运行时没有设置表单服务可读该值，因此浏览器半侧在那里不注册，卡片维持上文[配置](#配置)一节描述的行为（没有 GUI 字段，用工具或 `settings.yaml`）。
 
 ## 维护
 
