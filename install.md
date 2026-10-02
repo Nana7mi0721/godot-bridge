@@ -15,6 +15,7 @@ cordis.patch.yml                  # bundle patch layer (inserts the tool row)
 scripts/install.mjs               # this fork: install/uninstall a profile without the `dsh` CLI
 scripts/doctor.mjs                # this fork: environment + compatibility report (--deep loads the plugin)
 scripts/smoke.mjs                 # this fork: 11 end-to-end checks against a throwaway Godot project
+scripts/check-client.mjs          # this fork: loads the browser half and renders the section it registers
 scripts/lib/runtime.mjs           # this fork: shared runtime-resolution plumbing for the scripts above
 examples/minimal-4.7/             # this fork: a small real Godot 4.7 project to drive the tools against
 ```

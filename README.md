@@ -108,10 +108,12 @@ node scripts/doctor.mjs --profile desktop             # 15 checks: profile wirin
 node scripts/doctor.mjs --profile desktop --deep      # + load the plugin through the real runtime resolution and count tools
 node scripts/smoke.mjs  --profile desktop --keep      # + drive a throwaway Godot 4.7 project through 11 end-to-end checks
 
-npm run check                                         # the upstream static contract check (unchanged)
+npm run check                                         # the upstream static contract check, plus the static browser-half checks
+npm run check:client                                  # load the browser half and render the section it registers
 ```
 
 - `scripts/install.mjs` writes `dsh.profile.bundles` itself, after pnpm returns — it never hand-edits `cordis.patch.yml` (the loader composes that from the manifest's `dsh.bundle.patch`), and it backs the profile manifest up to `package.json.bak-godot-bridge-<timestamp>`.
+- `scripts/check-client.mjs` runs the browser half the way `@deepseek-ai/dsh-client-modules` does — a classic script calling `window.__ModuleLoader__.load({ id, factory })` — then executes the returned body against a recording context and renders the section it registers, with a stub React just rich enough for the hooks the form uses. No DSH installation, no browser, no dependency. It covers the failure that is otherwise silent: when the browser half registers nothing, or registers under a key the page never dispatches, every host-side check still passes and the card simply has no field.
 - `scripts/doctor.mjs` also finds your Godot build (argument → `GODOT_BIN`/`GODOT4`/`GODOT_PATH` → a `godotPath:` in any profile patch → `where godot` → a shallow scan of the usual install roots) and reads the version from the exe.
 - `scripts/smoke.mjs` generates a temporary Godot 4.7 project (deliberately *without* the autoload, so the auto-install path is exercised too), launches it, and checks: plugin load, `godot_validate_script` on a script that uses an autoload, `godot_headless_op` create/add/read scene, `godot_run_headless` stdout, `godot_run_project` + autoload registration, `godot_command get_scene_tree`, `call_method` + `get_property` round-trip on a live node, `godot_screenshot`, `godot_stop_project`. Use `--keep` to inspect the project afterwards.
 - The compatibility facts the doctor asserts live in `package.json` → `godotBridge.compat` (`dsh`, `dshTested`, `godot.min` / `godot.max` / `godot.tested`). Edit them there when you verify a new pairing.

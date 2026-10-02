@@ -31,7 +31,8 @@
     "ai-agent"
   ],
   "scripts": {
-    "check": "node scripts/check-plugin-contract.mjs",
+    "check": "node scripts/check-plugin-contract.mjs && node scripts/check-client.mjs",
+    "check:client": "node scripts/check-client.mjs",
     "doctor": "node scripts/doctor.mjs",
     "install-plugin": "node scripts/install.mjs"
   },

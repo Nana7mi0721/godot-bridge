@@ -15,6 +15,7 @@ cordis.patch.yml                  # bundle patch 层（插入工具行）
 scripts/install.mjs               # 本 fork：不依赖 `dsh` CLI 的 profile 安装/卸载
 scripts/doctor.mjs                # 本 fork：环境与兼容性体检（--deep 会真实加载插件）
 scripts/smoke.mjs                 # 本 fork：用一次性 Godot 项目跑 11 项端到端断言
+scripts/check-client.mjs          # 本 fork：加载浏览器半侧并渲染它注册的配置区
 scripts/lib/runtime.mjs           # 本 fork：上述脚本共享的 runtime resolution plumbing
 examples/minimal-4.7/             # 本 fork：一个小的真实 Godot 4.7 项目，用来驱动工具
 ```

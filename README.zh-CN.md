@@ -108,10 +108,12 @@ node scripts/doctor.mjs --profile desktop             # 15 项体检：profile �
 node scripts/doctor.mjs --profile desktop --deep      # 再加一项：走真实 runtime resolution 加载插件并数工具
 node scripts/smoke.mjs  --profile desktop --keep      # 再加端到端：用一次性 Godot 4.7 项目跑 11 项断言
 
-npm run check                                         # 上游的静态契约检查（未改动）
+npm run check                                         # 上游的静态契约检查，外加浏览器半侧的静态检查
+npm run check:client                                  # 加载浏览器半侧并渲染它注册的配置区
 ```
 
 - `scripts/install.mjs` 在 pnpm 返回**之后**自己写 `dsh.profile.bundles`——它绝不手改 `cordis.patch.yml`（那张表由 loader 依据 manifest 的 `dsh.bundle.patch` 组合），改前把 profile manifest 备份成 `package.json.bak-godot-bridge-<时间戳>`。
+- `scripts/check-client.mjs` 按 `@deepseek-ai/dsh-client-modules` 的方式运行浏览器半侧——一段经典脚本调用 `window.__ModuleLoader__.load({ id, factory })`——然后把它返回的 body 跑在会记录调用的 ctx 上，并渲染它注册的配置区；里面的 React stub 只实现表单用到的那几个 hook。不需要 DSH 安装、不需要浏览器、零依赖。它覆盖的是那种否则完全静默的失败：浏览器半侧什么都没注册，或者注册的键跟页面派发的键对不上——宿主侧所有检查照样全绿，卡片上就是没有那个字段。
 - `scripts/doctor.mjs` 还会找你的 Godot（参数 → `GODOT_BIN`/`GODOT4`/`GODOT_PATH` → 任一 profile patch 里的 `godotPath:` → `where godot` → 常见安装根目录浅扫），并直接从 exe 读版本号。
 - `scripts/smoke.mjs` 会生成一个临时 Godot 4.7 项目（**故意不带** autoload，以便顺带验证"自动安装 autoload"这条路），启动它，然后断言：插件装载、对引用 autoload 的脚本跑 `godot_validate_script`、`godot_headless_op` 建/加/读场景、`godot_run_headless` 的 stdout、`godot_run_project` + autoload 注册、`godot_command get_scene_tree`、对运行中节点做 `call_method` + `get_property` 往返、`godot_screenshot`、`godot_stop_project`。加 `--keep` 可保留项目事后查看。
 - doctor 断言用的兼容性事实写在 `package.json` → `godotBridge.compat`（`dsh`、`dshTested`、`godot.min` / `godot.max` / `godot.tested`）。验证了新组合就改这里。

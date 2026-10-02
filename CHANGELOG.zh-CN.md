@@ -21,6 +21,7 @@
 - `scripts/doctor.mjs` —— 15 项环境体检：Node、DSH 安装与版本、各 profile 的依赖/bundle/`node_modules`/入口/patch 接线、Godot 发现（`--godot` → `GODOT_BIN`/`GODOT4`/`GODOT_PATH` → 任一 profile patch 里的 `godotPath:` → `where godot` → 常见安装根目录浅扫）并用引擎自身 `--version` 读版本、按 `godotBridge.compat` 判 DSH/Godot 兼容性、以及配置的 git 代理是否真的可达。`--deep` 还会走真实 runtime resolution 加载一次插件。
 - `scripts/smoke.mjs` —— 端到端验收：生成一个一次性 Godot 4.7 项目（**故意不带** autoload，以便验证自动安装路径），再通过插件真实的 `execute()` 实现跑 11 项断言。`--keep` 保留项目供检查。
 - `scripts/lib/runtime.mjs` —— 共享 plumbing：定位 DSH 应用、加载 profile 目录、构建 launcher 的 runtime resolution、追加 linked roots、把 resolution bootstrap 交给 worker。`scripts/lib/load-probe.mjs`、`scripts/lib/load-probe-worker.mjs`、`scripts/lib/smoke-worker.mjs`、`scripts/lib/run-cli.mjs` 均基于它。
+- `scripts/check-client.mjs`（`npm run check:client`）—— 静态契约检查那句承诺在运行期的另一半。它按 `@deepseek-ai/dsh-client-modules` 的方式加载 `client/client.js`（一段经典脚本调用 `window.__ModuleLoader__.load({ id, factory })`），把返回的 body 跑在会记录每次注册的 ctx 上，并用一个只实现表单所需 hook 的 React stub 渲染它注册的配置区。共 17 项断言：模块 id、只用平台种子说明符、`slots` 声明、按行 id `tool-godot-bridge` 读取作用域、以**包名为键**注册 `plugins.bundle.config`、中英文字典，以及表单在"已保存 / 未设置 / 只读 / 未加载 / 设置文档尚未到达"五种状态下的表现——外加上设置表单服务缺失时（DSH 0.1.6–0.1.x）它必须保持惰性。不需要 DSH 安装、不需要浏览器、零依赖。
 - README 与 `install.md` 新增兼容性矩阵与安装排障顺序：**git 代理失效**（`exit=128 … Failed to connect to github.com:443 over proxy …`）、插件管理器"有 agent 在跑时禁止安装"、`desktop` profile 拒绝 CLI 管理、bundle 与 manifest 改动各自的重启边界、以及 `_console.exe` 的 stdout 陷阱。
 
 ### 修正（本 fork 的脚本内）
