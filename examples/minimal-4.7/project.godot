@@ -1,0 +1,27 @@
+; Engine configuration file.
+; Godot 4.7 project used to prove the godot-bridge DSH plugin works
+; end to end: headless operations, GDScript validation, headless runs,
+; and an interactive run driven through the in-game TCP server.
+
+config_version=5
+
+[application]
+
+config/name="Godot Bridge Demo"
+config/description="Minimal Godot 4.7 project for godot-bridge acceptance tests."
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.7", "Forward Plus")
+config/icon="res://icon.svg"
+
+[autoload]
+
+Game = "*res://autoload/game.gd"
+McpInteractionServer="*res://autoload/mcp_interaction_server.gd"
+[display]
+
+window/size/viewport_width=640
+window/size/viewport_height=360
+
+[rendering]
+
+renderer/rendering_method="forward_plus"

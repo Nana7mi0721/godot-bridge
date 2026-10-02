@@ -12,6 +12,11 @@ plugin/godot_operations.gd        # vendored from godot-mcp (MIT) — headless o
 plugin/validate_script.gd         # vendored from godot-mcp (MIT) — GDScript compile-check
 package.json                      # dsh.bundle + dsh.client manifest (for `dsh plugin add`)
 cordis.patch.yml                  # bundle patch layer (inserts the tool row)
+scripts/install.mjs               # this fork: install/uninstall a profile without the `dsh` CLI
+scripts/doctor.mjs                # this fork: environment + compatibility report (--deep loads the plugin)
+scripts/smoke.mjs                 # this fork: 11 end-to-end checks against a throwaway Godot project
+scripts/lib/runtime.mjs           # this fork: shared runtime-resolution plumbing for the scripts above
+examples/minimal-4.7/             # this fork: a small real Godot 4.7 project to drive the tools against
 ```
 
 The plugin is a standard DSH bundle module: it imports `defineTool` from `@deepseek-ai/dsh-tools` and registers the seventeen `godot_*` tools via `ctx.tools.register`. It uses named exports (`export const name`, `export const inject`, `export function apply`) — the cordis loader's `unwrapExports` (`exports.default ?? exports`) turns the namespace into the plugin object. Do not add a stray `export default`: it would make `unwrapExports` collapse to that single value and silently drop `name`/`inject`/`apply`.
@@ -19,6 +24,26 @@ The plugin is a standard DSH bundle module: it imports `defineTool` from `@deeps
 Because it imports `@deepseek-ai/*`, the module must resolve the harness dependency tree at load time. DSH 0.2 does that with the launcher's runtime resolution instead of a physical fallback layer: a bundle installed into `$DSH_HOME/profiles/<name>/node_modules` is routed to the installation's copies automatically, while a `link:` checkout — whose real path lies outside the profiles tree, because Node's ESM loader resolves symlinks before importing — is routed only for names the plugin declares in its own `peerDependencies`. godot-bridge ≥ 0.1.8 declares `@deepseek-ai/dsh-tools` and `@deepseek-ai/schemastery` (both `peerDependenciesMeta.optional`, so pnpm never installs harness packages from the registry). Keep that declaration when you edit the manifest — `npm run check` fails without it. Do **not** copy the file into a user agent preset (`~/.dsh/.agent-presets/...`): that location is outside every resolution scope and cannot resolve `@deepseek-ai/dsh-tools`.
 
 ## Install
+
+### This fork's installer (no `dsh` CLI needed)
+
+```sh
+node scripts/install.mjs --list                       # every profile: dependency, bundle entry, installed payload
+node scripts/install.mjs --profile desktop            # install this checkout into a profile
+node scripts/install.mjs --profile desktop --dry-run  # print the pnpm call and the manifest edit, change nothing
+node scripts/install.mjs --profile desktop --remove   # uninstall
+```
+
+It is the same `dsh plugin add`/`remove` flow, driven through the app's own bundled CLI with `manageDesktopProfile: true` — the Electron shell's own entry point, and the only way to touch the **`desktop` profile**, which the CLI otherwise refuses (`error: profile "desktop" is managed exclusively by the Electron application`). The `dsh` shim on `PATH` is bypassed on purpose: it can point at a checkout that no longer exists. `--spec <pnpm spec>` installs something other than this checkout (a tag, a tarball, `github:…`); `--link <dir>` performs a `link:` install instead.
+
+After the install, verify instead of guessing:
+
+```sh
+node scripts/doctor.mjs --profile desktop --deep   # wiring + versions + a real load through the runtime resolution
+node scripts/smoke.mjs  --profile desktop --keep   # 11 end-to-end checks against a throwaway Godot 4.7 project
+```
+
+The doctor needs no Godot running; the smoke test launches one (and stops it). Both accept `--godot <exe>`; without it they resolve the engine the same way the plugin does. See [README → This fork](README.md#this-fork-nana7mi0721godot-bridge) for the compatibility matrix and the install-troubleshooting order.
 
 ### Recommended: community bundle (`dsh plugin add`)
 
@@ -87,6 +112,8 @@ On DSH 0.1.6–0.1.x the slot exists but the runtime has no settings-form servic
 - Editing `plugin/godot-bridge.mjs` needs no rebuild (plain ESM), and editing `client/client.js` needs no rebuild either: the host polls each bundle's artifact and hot-swaps it within about a second.
 - After changing the plugin, reinstall it into the profile (`dsh plugin --profile web add github:Smalldy/godot-bridge` again) and restart the session. A `link:` install needs no reinstall — reload the profile (Plugins page) for host-half edits, and restart DSH after a `package.json` edit, whose `dsh.client`/`exports`/`files` facts are read once per Loader row and cached until restart.
 - Before committing or publishing, run `npm run check` (static dependency contract: declared `@deepseek-ai/*` peers, bundle patch, entry exports). `node scripts/diagnose-dsh-resolution.mjs --profile <profile>` re-runs the launcher's resolution and prints what it routes (development only; needs the installed DSH app).
+
+- This fork's three commands cover the three questions in order — *is it wired up* (`node scripts/doctor.mjs --profile <profile>`), *does the runtime actually load it* (`--deep`), and *does it drive a live engine* (`node scripts/smoke.mjs --profile <profile> --keep`). Run the doctor after any upgrade of DSH or Godot: it reads the compatibility facts from `package.json` → `godotBridge.compat` and fails loudly when a version falls outside them, and it warns when the git proxy configured in `~/.gitconfig` is unreachable — the failure that kills a `github:` marketplace install before any compatibility check happens. The smoke test needs a Godot build (discovered automatically, or `--godot <exe>`) and is the only check that touches a real project; it generates a throwaway one, so never point it at a project you care about.
 - The manifest's `peerDependencies` change what DSH may load: a declared `@deepseek-ai/dsh-*` range that does not match the running runtime makes DSH skip the bundle with an explicit message instead of failing at import.
 - **Publishing an update**: bump `version` in `package.json` and push — the plugin's boot-time check (see README "Update notices") uses that version as the release marker, so existing installs only see a notice when it is higher than what they have.
 - The game side (`mcp_interaction_server.gd` autoload) is never modified by the plugin.

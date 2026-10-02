@@ -5,6 +5,29 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## 本 fork 增补 —— `Nana7mi0721/godot-bridge`
+
+本 fork 逐字节保留上游插件本体：版本号同为 `0.2.0`，`plugin/godot-bridge.mjs` 与两个 GDScript 半边、manifest 契约均未改。以下全部是**增量**，因此不会对上游安装触发更新提示，`git diff upstream/main` 也只限于这些文件。
+
+### 已验证
+
+- **DSH `0.2.0-rc.2` × godot-bridge `0.2.0`** —— 插件经 launcher 的 runtime resolution 正常加载（`@deepseek-ai/dsh-tools@0.2.0-rc.2` 取自安装版），**17 个工具 + 3 个 prompt section 全部注册**；`link:` 检出与装进 profile 两种形态都过（`desktop` 解析出 692 个包，`web` 513 个）。
+- **Godot `4.7.2.stable.official.ed1daf0bf`** —— 在生成的测试项目上端到端通过：对引用 autoload 的脚本做 GDScript 校验、headless 场景操作（`create_scene` / `add_node` / `read_scene`）、`godot_run_headless` 的 stdout、`godot_run_project` 自动安装 `McpInteractionServer` autoload、运行中的 `get_scene_tree`、`call_method` + `get_property` 往返、`godot_screenshot`、`godot_stop_project`。
+- 上述事实写在 `package.json` → `godotBridge.compat`，也就是 doctor 用来断言的依据。
+
+### 新增
+
+- `scripts/install.mjs` —— 零依赖安装器（`--list`、`--profile`、`--spec`、`--link`、`--dry-run`、`--json`、`--remove`）。它调用应用自带的 CLI 并传 `manageDesktopProfile: true`，这是管理 `desktop` profile 的唯一途径（`dsh plugin --profile desktop …` 会被拒绝）；并且在 pnpm 返回**之后**重新读 manifest 再改 `dsh.profile.bundles`，因此不会覆盖 pnpm 写下的依赖范围。
+- `scripts/doctor.mjs` —— 15 项环境体检：Node、DSH 安装与版本、各 profile 的依赖/bundle/`node_modules`/入口/patch 接线、Godot 发现（`--godot` → `GODOT_BIN`/`GODOT4`/`GODOT_PATH` → 任一 profile patch 里的 `godotPath:` → `where godot` → 常见安装根目录浅扫）并用引擎自身 `--version` 读版本、按 `godotBridge.compat` 判 DSH/Godot 兼容性、以及配置的 git 代理是否真的可达。`--deep` 还会走真实 runtime resolution 加载一次插件。
+- `scripts/smoke.mjs` —— 端到端验收：生成一个一次性 Godot 4.7 项目（**故意不带** autoload，以便验证自动安装路径），再通过插件真实的 `execute()` 实现跑 11 项断言。`--keep` 保留项目供检查。
+- `scripts/lib/runtime.mjs` —— 共享 plumbing：定位 DSH 应用、加载 profile 目录、构建 launcher 的 runtime resolution、追加 linked roots、把 resolution bootstrap 交给 worker。`scripts/lib/load-probe.mjs`、`scripts/lib/load-probe-worker.mjs`、`scripts/lib/smoke-worker.mjs`、`scripts/lib/run-cli.mjs` 均基于它。
+- README 与 `install.md` 新增兼容性矩阵与安装排障顺序：**git 代理失效**（`exit=128 … Failed to connect to github.com:443 over proxy …`）、插件管理器"有 agent 在跑时禁止安装"、`desktop` profile 拒绝 CLI 管理、bundle 与 manifest 改动各自的重启边界、以及 `_console.exe` 的 stdout 陷阱。
+
+### 修正（本 fork 的脚本内）
+
+- `scripts/install.mjs`：`--dry-run` 现在独占短路（此前与 `--json` 一起用会落入真实安装）、卸载时报告"已移除"而不是"已安装"、bundle 改动改为在 pnpm 之后读 manifest 计算。
+- `scripts/doctor.mjs`：读取 `app.asar` 里的 DSH 版本改为借应用读取（`ELECTRON_RUN_AS_NODE=1 … -e`），因为普通 Node 下 `fs.existsSync` 会把所有 asar 路径判为不存在；版本比较遇到无法解析的版本不再抛异常。
+
 ## [0.2.0] - 2026-10-01
 
 ### 新增

@@ -5,6 +5,29 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Fork additions — `Nana7mi0721/godot-bridge`
+
+This fork keeps the upstream plugin byte for byte: same version number (`0.2.0`), same `plugin/godot-bridge.mjs` and GDScript halves, same manifest contract. Everything below is additive, so an update notice is never raised against upstream installs and `git diff upstream/main` stays limited to these files.
+
+### Verified
+
+- **DSH `0.2.0-rc.2` × godot-bridge `0.2.0`** — the plugin loads through the launcher's runtime resolution (`@deepseek-ai/dsh-tools@0.2.0-rc.2` from the installation) and registers all **17 tools plus 3 prompt sections**, both as a `link:` checkout and as a package installed inside the profile (692-package resolution on `desktop`, 513 on `web`).
+- **Godot `4.7.2.stable.official.ed1daf0bf`** — end-to-end on a generated project: GDScript validation of a script that references an autoload, headless scene ops (`create_scene` / `add_node` / `read_scene`), `godot_run_headless` stdout, `godot_run_project` with automatic `McpInteractionServer` autoload installation, live `get_scene_tree`, `call_method` + `get_property` round-trip, `godot_screenshot`, `godot_stop_project`.
+- Both facts now live in `package.json` → `godotBridge.compat`, which is what the doctor asserts against.
+
+### Added
+
+- `scripts/install.mjs` — zero-dependency installer (`--list`, `--profile`, `--spec`, `--link`, `--dry-run`, `--json`, `--remove`). It calls the app's own bundled CLI with `manageDesktopProfile: true`, which is the only way to manage the `desktop` profile (`dsh plugin --profile desktop …` refuses it), and reconciles `dsh.profile.bundles` by re-reading the manifest *after* pnpm returns, so the pnpm-written dependency range is never clobbered.
+- `scripts/doctor.mjs` — 15-check environment report: Node, DSH installation and version, per-profile dependency/bundle/`node_modules`/entry/patch wiring, Godot discovery (`--godot` → `GODOT_BIN`/`GODOT4`/`GODOT_PATH` → a `godotPath:` in any profile patch → `where godot` → a shallow scan of the usual install roots) with the engine's own `--version`, DSH/Godot compatibility against `godotBridge.compat`, and whether the configured git proxy is actually reachable. `--deep` additionally loads the plugin through the real runtime resolution.
+- `scripts/smoke.mjs` — end-to-end acceptance: generates a throwaway Godot 4.7 project (deliberately without the autoload, so the auto-install path is exercised), then drives 11 checks through the plugin's real `execute()` implementations. `--keep` leaves the project for inspection.
+- `scripts/lib/runtime.mjs` — shared plumbing: locate the DSH app, load the profile directory, build the launcher's runtime resolution, append linked roots, and hand the worker the resolution bootstrap. `scripts/lib/load-probe.mjs`, `scripts/lib/load-probe-worker.mjs`, `scripts/lib/smoke-worker.mjs` and `scripts/lib/run-cli.mjs` build on it.
+- README and `install.md` now carry the compatibility matrix and an install-troubleshooting order: the dead-git-proxy failure (`exit=128 … Failed to connect to github.com:443 over proxy …`), the plugin manager's "no agents running" rule, the `desktop`-profile CLI refusal, the restart boundary for bundle and manifest changes, and the `_console.exe` stdout caveat.
+
+### Fixed (in this fork's scripts)
+
+- `scripts/install.mjs`: `--dry-run` now short-circuits on its own (it used to fall through into a real install when combined with `--json`), removal reports removal rather than "installed", and the bundle edit is computed from the post-pnpm manifest.
+- `scripts/doctor.mjs`: reading the DSH version out of `app.asar` goes through the app (`ELECTRON_RUN_AS_NODE=1 … -e`), because `fs.existsSync` reports every asar path as missing under plain Node; version comparison no longer throws on an unparsable version.
+
 ## [0.2.0] - 2026-10-01
 
 ### Added

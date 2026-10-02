@@ -12,6 +12,11 @@ plugin/godot_operations.gd        # 取自 godot-mcp（MIT）——headless 操�
 plugin/validate_script.gd         # 取自 godot-mcp（MIT）——GDScript 编译检查
 package.json                      # dsh.bundle + dsh.client manifest（供 `dsh plugin add` 安装）
 cordis.patch.yml                  # bundle patch 层（插入工具行）
+scripts/install.mjs               # 本 fork：不依赖 `dsh` CLI 的 profile 安装/卸载
+scripts/doctor.mjs                # 本 fork：环境与兼容性体检（--deep 会真实加载插件）
+scripts/smoke.mjs                 # 本 fork：用一次性 Godot 项目跑 11 项端到端断言
+scripts/lib/runtime.mjs           # 本 fork：上述脚本共享的 runtime resolution plumbing
+examples/minimal-4.7/             # 本 fork：一个小的真实 Godot 4.7 项目，用来驱动工具
 ```
 
 插件是标准 DSH bundle 模块：`import { defineTool } from '@deepseek-ai/dsh-tools'`，17 个 `godot_*` 工具经 `ctx.tools.register` 注册。模块用命名导出（`export const name`、`export const inject`、`export function apply`）——cordis loader 的 `unwrapExports`（`exports.default ?? exports`）会把命名空间变成插件对象。不要加多余的 `export default`：它会令 `unwrapExports` 收敛成那一个值，`name`/`inject`/`apply` 被静默丢弃。
@@ -19,6 +24,26 @@ cordis.patch.yml                  # bundle patch 层（插入工具行）
 因为要 `import '@deepseek-ai/*'`，模块必须在加载时解析到 harness 依赖树。DSH 0.2 用 launcher 的 runtime resolution 取代了物理 fallback 层：装进 `$DSH_HOME/profiles/<name>/node_modules` 的 bundle 会自动被路由到安装版副本；而 `link:` 的 checkout——真实路径落在 profiles 树之外（Node 的 ESM loader 会先 realpath 再 import）——只有在插件自己的 `peerDependencies` 里声明了该包名时才会被路由。godot-bridge ≥ 0.1.8 声明了 `@deepseek-ai/dsh-tools` 与 `@deepseek-ai/schemastery`（均标 `peerDependenciesMeta.optional`，pnpm 不会去 registry 安装 harness 包）。改 manifest 时保留该声明——`npm run check` 会在缺失时失败。**不要**把文件复制进用户 agent 预设（`~/.dsh/.agent-presets/...`）：那里不在任何解析范围内，解析不到 `@deepseek-ai/dsh-tools`。
 
 ## 安装
+
+### 本 fork 的安装器（不依赖 `dsh` CLI）
+
+```sh
+node scripts/install.mjs --list                       # 列出各 profile：依赖、bundle 条目、已安装的 payload
+node scripts/install.mjs --profile desktop            # 把本检出装进某个 profile
+node scripts/install.mjs --profile desktop --dry-run  # 只打印 pnpm 调用与 manifest 改动，不落盘
+node scripts/install.mjs --profile desktop --remove   # 卸载
+```
+
+它走的就是同一套 `dsh plugin add`/`remove` 流程，只是改为调用应用自带的 CLI 并传 `manageDesktopProfile: true`——那是 Electron 壳自己的入口，也是**操作 `desktop` profile** 的唯一途径（否则 CLI 会拒绝：`error: profile "desktop" is managed exclusively by the Electron application`）。它刻意绕开 `PATH` 上的 `dsh` shim：那个 shim 可能指向一个已不存在的检出。`--spec <pnpm spec>` 可装本检出以外的东西（tag、tarball、`github:…`）；`--link <dir>` 则执行 `link:` 形态的安装。
+
+装完别猜，直接验证：
+
+```sh
+node scripts/doctor.mjs --profile desktop --deep   # 接线 + 版本 + 通过 runtime resolution 真实加载一次
+node scripts/smoke.mjs  --profile desktop --keep   # 用一次性 Godot 4.7 项目跑 11 项端到端断言
+```
+
+doctor 不需要 Godot 在跑；smoke 会启动（并在结束时停止）一个。两者都接受 `--godot <exe>`；不传时按插件相同的方式解析引擎。兼容性矩阵与安装排障顺序见 [README → 本 fork](README.zh-CN.md#本-forknana7mi0721godot-bridge)。
 
 ### 推荐：社区 bundle（`dsh plugin add`）
 
@@ -87,6 +112,8 @@ dsh plugin --profile web remove godot-bridge
 - 改 `plugin/godot-bridge.mjs` 无需重新构建（纯 ESM）；改 `client/client.js` 同样无需构建——宿主按产物文件轮询，约一秒内热换。
 - 改完插件后重新安装进 profile（再次 `dsh plugin --profile web add github:Smalldy/godot-bridge`）并重启会话。`link:` 安装无需重装——host 半侧的改动重载 profile（插件页）即可，而 `package.json`（`dsh.client`/`exports`/`files`）的改动必须重启 DSH：这些事实对每个 Loader 行只读一次并缓存到重启为止。
 - 提交或发布前先跑 `npm run check`（静态依赖契约：`@deepseek-ai/*` peers 声明、bundle patch、入口导出）。`node scripts/diagnose-dsh-resolution.mjs --profile <profile>` 会重跑 launcher 的解析并打印它实际路由了什么（仅开发用，需要已安装的 DSH 应用）。
+
+- 本 fork 的三个命令正好按顺序回答三个问题——*接线对不对*（`node scripts/doctor.mjs --profile <profile>`）、*运行时真能加载吗*（加 `--deep`）、*能不能驱动真实引擎*（`node scripts/smoke.mjs --profile <profile> --keep`）。每次升级 DSH 或 Godot 后都建议跑一次 doctor：它从 `package.json` → `godotBridge.compat` 读兼容性事实，版本越界会明确报错；`~/.gitconfig` 里配置的 git 代理不可达时也会告警——那正是会让 `github:` 市场安装在兼容性检查之前就失败的坑。smoke 需要一个 Godot（自动发现，或用 `--godot <exe>`），也是唯一会动真实项目的检查；它生成的是**一次性项目**，所以不要把它指向你在意的工程。
 - manifest 的 `peerDependencies` 会影响 DSH 的加载决策：声明的 `@deepseek-ai/dsh-*` 范围与当前运行时不匹配时，DSH 会带明确信息 **skip** 该 bundle，而不是在 import 阶段失败。
 - **发布更新**：在 `package.json` 递增 `version` 并推送——插件启动时的版本检查（见 README「更新提示」）以此作为发布标记，已装用户只有在远端版本更高时才会看到提示。
 - 游戏侧（`mcp_interaction_server.gd` autoload）永远不会被插件修改。

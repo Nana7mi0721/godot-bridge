@@ -13,7 +13,11 @@
     "client/",
     "cordis.patch.yml",
     "CHANGELOG.md",
-    "CHANGELOG.zh-CN.md"
+    "CHANGELOG.zh-CN.md",
+    "scripts/",
+    "LICENSE",
+    "install.md",
+    "install.zh-CN.md"
   ],
   "keywords": [
     "dsh",
@@ -27,7 +31,9 @@
     "ai-agent"
   ],
   "scripts": {
-    "check": "node scripts/check-plugin-contract.mjs"
+    "check": "node scripts/check-plugin-contract.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "install-plugin": "node scripts/install.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-tools": ">=0.1.6-0",
@@ -44,7 +50,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Smalldy/godot-bridge.git"
+    "url": "https://github.com/Nana7mi0721/godot-bridge.git"
   },
   "dsh": {
     "bundle": {
@@ -57,5 +63,18 @@
         "@deepseek-ai/dsh-client-locale"
       ]
     }
+  },
+  "godotBridge": {
+    "compat": {
+      "dsh": ">=0.2.0-rc.2",
+      "dshTested": "0.2.0-rc.2",
+      "godot": {
+        "min": "4.0",
+        "max": "4.7",
+        "tested": "4.7.2"
+      }
+    },
+    "forkOf": "Smalldy/godot-bridge",
+    "fork": "Nana7mi0721/godot-bridge"
   }
 }

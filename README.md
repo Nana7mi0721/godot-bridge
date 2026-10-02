@@ -5,6 +5,8 @@
 [![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 [![Listed on DSH Directory](https://dsh.directory/badges/listed.svg)](https://dsh.directory/plugins/smalldy/godot-bridge)
 
+> **Fork:** [Nana7mi0721/godot-bridge](https://github.com/Nana7mi0721/godot-bridge) — verified against **DSH 0.2.0-rc.2** and **Godot 4.7.2**, with `install` / `doctor` / `smoke` scripts. See [This fork](#this-fork-nana7mi0721godot-bridge) for the compatibility matrix and the install troubleshooting that actually matters.
+
 Native **DeepSeek Harness (DSH)** plugin that launches and drives a running **Godot 4.x** game through its in-game TCP interaction server — replacing the [`godot-mcp`](https://github.com/tugcantopaloglu/godot-mcp) MCP server with first-class agent tools.
 
 No MCP protocol, no Python server, no editor addon. The game side is untouched: `McpInteractionServer` (the `mcp_interaction_server.gd` autoload) already listens on `127.0.0.1:9090` and speaks newline-delimited JSON — godot-bridge speaks the same protocol natively from inside the DSH host.
@@ -77,6 +79,57 @@ dsh plugin --profile web remove godot-bridge
 ```
 
 Removes the package and its `godot-bridge` bundle layer from the profile — after a restart the seventeen `godot_*` tools are gone from sessions on that profile. The standard `web` profile itself is untouched (this never creates or removes a profile). Stop any running game first with `godot_stop_project`; the plugin's unload cleanup also terminates a Godot child it started. Reinstall any time with the `add` command above.
+
+## This fork (`Nana7mi0721/godot-bridge`)
+
+> Fork of [Smalldy/godot-bridge](https://github.com/Smalldy/godot-bridge). The plugin code, the GDScript halves, and the tool surface are **unchanged** — this fork adds a **verified compatibility matrix** plus three zero-dependency scripts that install, check, and prove a DSH + Godot pairing end to end.
+
+Verified here by actually running it, not by reading the manifest:
+
+| Pair | Result |
+| --- | --- |
+| DSH `0.2.0-rc.2` (Desktop, Electron 44 / Node 24) × godot-bridge `0.2.0` | **works** — 17 tools + 3 prompt sections register through the launcher's runtime resolution (`@deepseek-ai/dsh-tools@0.2.0-rc.2` from the installation), both as a `link:` checkout and as a profile install |
+| Godot `4.7.2.stable.official.ed1daf0bf` | **works** — headless run, scene ops, live `get_scene_tree` / `call_method` / screenshot all pass on a fresh project (see `scripts/smoke.mjs`, 11/11) |
+| Godot `4.0` – `4.6` | expected to work (same Godot 4 API surface; the plugin only uses `TCPServer`/`StreamPeerTCP`/`Tween`/`Engine.get_version_info`-era APIs) — **not** tested here |
+
+So if a marketplace install failed for you, the version gate was almost never the cause: check [Troubleshooting the install](#troubleshooting-the-install) first — a dead git proxy and the "no agents running" rule are the two failure modes seen in practice.
+
+### Scripts added by this fork
+
+Zero dependencies, plain Node. All of them auto-detect the DSH app (`--dsh-app` to override) and work on both the `desktop` profile — which the `dsh` CLI refuses to manage (`profile "desktop" is managed exclusively by the Electron application`) — and any other profile.
+
+```sh
+node scripts/install.mjs --list                       # profiles, what is installed, whether it is in dsh.profile.bundles
+node scripts/install.mjs --profile desktop            # install from this checkout (link: is not used; pnpm gets a folder spec)
+node scripts/install.mjs --profile desktop --dry-run  # show the pnpm call and the manifest edit, change nothing
+node scripts/install.mjs --profile desktop --remove   # uninstall
+
+node scripts/doctor.mjs --profile desktop             # 15 checks: profile wiring, engine path, version compatibility, git proxy
+node scripts/doctor.mjs --profile desktop --deep      # + load the plugin through the real runtime resolution and count tools
+node scripts/smoke.mjs  --profile desktop --keep      # + drive a throwaway Godot 4.7 project through 11 end-to-end checks
+
+npm run check                                         # the upstream static contract check (unchanged)
+```
+
+- `scripts/install.mjs` writes `dsh.profile.bundles` itself, after pnpm returns — it never hand-edits `cordis.patch.yml` (the loader composes that from the manifest's `dsh.bundle.patch`), and it backs the profile manifest up to `package.json.bak-godot-bridge-<timestamp>`.
+- `scripts/doctor.mjs` also finds your Godot build (argument → `GODOT_BIN`/`GODOT4`/`GODOT_PATH` → a `godotPath:` in any profile patch → `where godot` → a shallow scan of the usual install roots) and reads the version from the exe.
+- `scripts/smoke.mjs` generates a temporary Godot 4.7 project (deliberately *without* the autoload, so the auto-install path is exercised too), launches it, and checks: plugin load, `godot_validate_script` on a script that uses an autoload, `godot_headless_op` create/add/read scene, `godot_run_headless` stdout, `godot_run_project` + autoload registration, `godot_command get_scene_tree`, `call_method` + `get_property` round-trip on a live node, `godot_screenshot`, `godot_stop_project`. Use `--keep` to inspect the project afterwards.
+- The compatibility facts the doctor asserts live in `package.json` → `godotBridge.compat` (`dsh`, `dshTested`, `godot.min` / `godot.max` / `godot.tested`). Edit them there when you verify a new pairing.
+
+### Troubleshooting the install
+
+Ordered by how often each one actually bit:
+
+1. **A dead git proxy.** `pnpm` inherits `~/.gitconfig`; when `http.proxy` points at a port nothing listens on, a `github:` install dies before compatibility is ever evaluated:
+   ```
+   exit=128 err={"code":"operation-error","diagnostic":"fatal: unable to access 'https://github.com/…/': Failed to connect to github.com:443 over proxy 127.0.0.1 after 0 ms: Could not connect to server"}
+   ```
+   Check it with `git config --global --get-regexp proxy` and `curl -x <proxy> https://github.com`; fix it with `git config --global http.proxy http://127.0.0.1:<live-port>` (and the same for `https.proxy`), or install from a checkout/tarball instead of GitHub. `node scripts/doctor.mjs` reports this as its `git-proxy` check.
+2. **The plugin manager refuses to install while agents are running** (`install-blocked refused while agents are running — session-…`). Stop your sessions, install, then start a new one.
+3. **`dsh` is not usable from a shell** — the marketplace-page path always works, but the CLI shim can point at a checkout that no longer exists. This fork's scripts call the app's own bundled CLI instead (`ELECTRON_RUN_AS_NODE=1 <DeepSeek Harness.exe> <asar>/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js …`) with `manageDesktopProfile: true`, which is exactly what the Electron shell does — that is why `desktop` works here.
+4. **Installed but no `godot_*` tools in the running session.** Profile bundles are composed at host startup: restart DSH. A `link:` install is the exception for *code* edits (they apply on a profile reload) — but a `package.json` edit (`dsh.client`, `exports`, `files`) always needs a restart, because the client-module scan caches the manifest per Loader row.
+5. **The engine path is unset.** `godotPath` has no preset: set it with `godot_set_engine_path`, the `Godot engine path` field on the godot-bridge card, or a `config:` block on the `tool-godot-bridge` row. Point it at the real `.exe`, never a version-manager shim.
+6. **Use `Godot_v…_win64.exe`, not `…_console.exe`,** when you care about captured stdout: the console wrapper spawns the real engine as a detached child, so `godot_get_debug_output` / `godot_run_headless` stdout can come back empty (exit codes and the game itself still work).
 
 ## DSH 0.2+ compatibility and troubleshooting
 

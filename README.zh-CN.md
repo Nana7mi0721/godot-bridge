@@ -5,6 +5,8 @@
 [![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 [![Listed on DSH Directory](https://dsh.directory/badges/listed.svg)](https://dsh.directory/plugins/smalldy/godot-bridge)
 
+> **Fork：** [Nana7mi0721/godot-bridge](https://github.com/Nana7mi0721/godot-bridge) —— 已在 **DSH 0.2.0-rc.2** 与 **Godot 4.7.2** 上实测通过，附带 `install` / `doctor` / `smoke` 脚本。兼容性矩阵与真正有用的安装排障见 [本 fork](#本-forknana7mi0721godot-bridge)。
+
 原生 **DeepSeek Harness (DSH)** 插件：通过游戏内置的 TCP 交互服务器，启动并操控运行中的 **Godot 4.x** 游戏——以原生 Agent 工具取代 [`godot-mcp`](https://github.com/tugcantopaloglu/godot-mcp) MCP 服务器。
 
 无需 MCP 协议、无需 Python 服务器、无需编辑器插件。游戏侧零改动：`McpInteractionServer`（`mcp_interaction_server.gd` autoload）本就在 `127.0.0.1:9090` 监听，采用换行分隔的 JSON 协议——godot-bridge 在 DSH host 内部原生使用同一种协议。
@@ -77,6 +79,57 @@ dsh plugin --profile web remove godot-bridge
 ```
 
 从 profile 中删除该包及其 `godot-bridge` bundle 层——重启后该 profile 的会话不再有 17 个 `godot_*` 工具。标准 `web` profile 本身不受影响（这条命令从不创建或删除 profile）。先 `godot_stop_project` 停掉运行中的游戏；插件卸载清理也会终止它启动的 Godot 子进程。任何时候可用上面的 `add` 命令重新安装。
+
+## 本 fork（`Nana7mi0721/godot-bridge`）
+
+> [Smalldy/godot-bridge](https://github.com/Smalldy/godot-bridge) 的 fork。插件本体、两个 GDScript 半边、工具面**完全未改**——本 fork 增加的是**经过实测的兼容性矩阵**，以及三个零依赖脚本：安装、体检、端到端证明一套 DSH + Godot 组合真的能用。
+
+下面每条都是**跑出来的**，不是读 manifest 推断的：
+
+| 组合 | 结果 |
+| --- | --- |
+| DSH `0.2.0-rc.2`（Desktop，Electron 44 / Node 24）× godot-bridge `0.2.0` | **可用**——经 launcher 的 runtime resolution 注册 17 个工具 + 3 个 prompt section（`@deepseek-ai/dsh-tools@0.2.0-rc.2` 取自安装版），`link:` 检出与装进 profile 两种形态都过 |
+| Godot `4.7.2.stable.official.ed1daf0bf` | **可用**——新项目的 headless 运行、场景操作、运行中的 `get_scene_tree` / `call_method` / 截图全过（`scripts/smoke.mjs`，11/11） |
+| Godot `4.0` – `4.6` | 预期可用（同属 Godot 4 API 面；插件只用到 `TCPServer`/`StreamPeerTCP`/`Tween`/`Engine.get_version_info` 这一代 API）——**本机未实测** |
+
+所以如果你的插件市场安装失败过，原因几乎不可能是版本门禁：先看 [安装排障](#安装排障)。实践中真正遇到的两个失败源是**死掉的 git 代理**和**"有 agent 在跑时禁止安装"**。
+
+### 本 fork 新增的脚本
+
+零依赖、纯 Node。都会自动定位 DSH 应用（可用 `--dsh-app` 覆盖），并且同时支持 `desktop` profile——`dsh` CLI 明确拒绝管理它（`profile "desktop" is managed exclusively by the Electron application`）——和其他任何 profile。
+
+```sh
+node scripts/install.mjs --list                       # 列出各 profile、是否已装、是否在 dsh.profile.bundles 里
+node scripts/install.mjs --profile desktop            # 从本检出安装（不用 link:，pnpm 收到的是目录 spec）
+node scripts/install.mjs --profile desktop --dry-run  # 只打印 pnpm 调用与 manifest 改动，不落盘
+node scripts/install.mjs --profile desktop --remove   # 卸载
+
+node scripts/doctor.mjs --profile desktop             # 15 项体检：profile 接线、引擎路径、版本兼容、git 代理
+node scripts/doctor.mjs --profile desktop --deep      # 再加一项：走真实 runtime resolution 加载插件并数工具
+node scripts/smoke.mjs  --profile desktop --keep      # 再加端到端：用一次性 Godot 4.7 项目跑 11 项断言
+
+npm run check                                         # 上游的静态契约检查（未改动）
+```
+
+- `scripts/install.mjs` 在 pnpm 返回**之后**自己写 `dsh.profile.bundles`——它绝不手改 `cordis.patch.yml`（那张表由 loader 依据 manifest 的 `dsh.bundle.patch` 组合），改前把 profile manifest 备份成 `package.json.bak-godot-bridge-<时间戳>`。
+- `scripts/doctor.mjs` 还会找你的 Godot（参数 → `GODOT_BIN`/`GODOT4`/`GODOT_PATH` → 任一 profile patch 里的 `godotPath:` → `where godot` → 常见安装根目录浅扫），并直接从 exe 读版本号。
+- `scripts/smoke.mjs` 会生成一个临时 Godot 4.7 项目（**故意不带** autoload，以便顺带验证"自动安装 autoload"这条路），启动它，然后断言：插件装载、对引用 autoload 的脚本跑 `godot_validate_script`、`godot_headless_op` 建/加/读场景、`godot_run_headless` 的 stdout、`godot_run_project` + autoload 注册、`godot_command get_scene_tree`、对运行中节点做 `call_method` + `get_property` 往返、`godot_screenshot`、`godot_stop_project`。加 `--keep` 可保留项目事后查看。
+- doctor 断言用的兼容性事实写在 `package.json` → `godotBridge.compat`（`dsh`、`dshTested`、`godot.min` / `godot.max` / `godot.tested`）。验证了新组合就改这里。
+
+### 安装排障
+
+按实际踩坑频率排序：
+
+1. **git 代理已死。** `pnpm` 会继承 `~/.gitconfig`；当 `http.proxy` 指向一个没在监听的端口时，`github:` 安装在走到兼容性判断之前就死了：
+   ```
+   exit=128 err={"code":"operation-error","diagnostic":"fatal: unable to access 'https://github.com/…/': Failed to connect to github.com:443 over proxy 127.0.0.1 after 0 ms: Could not connect to server"}
+   ```
+   用 `git config --global --get-regexp proxy` 和 `curl -x <proxy> https://github.com` 确认；修复：`git config --global http.proxy http://127.0.0.1:<活着的端口>`（`https.proxy` 同理），或干脆改用本地检出/tarball 安装。`node scripts/doctor.mjs` 的 `git-proxy` 检查项就是查这个。
+2. **有 agent 在跑时插件管理器拒绝安装**（`install-blocked refused while agents are running — session-…`）。停掉会话 → 安装 → 再开会话。
+3. **shell 里的 `dsh` 不可用**——插件市场页面那条路总是可用的，但 CLI shim 可能指向一个已经不存在的检出。本 fork 的脚本改为调用应用自带的 CLI（`ELECTRON_RUN_AS_NODE=1 <DeepSeek Harness.exe> <asar>/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js …`）并传 `manageDesktopProfile: true`——这正是 Electron 壳自己走的路，所以这里 `desktop` 能用。
+4. **装好了但运行中的会话里没有 `godot_*` 工具。** profile bundles 在宿主启动时组合：重启 DSH。`link:` 安装只在**改代码**时免重启（profile reload 生效）——但改 `package.json`（`dsh.client`、`exports`、`files`）永远要重启，因为客户端模块扫描按 Loader 行缓存 manifest。
+5. **引擎路径没设。** `godotPath` 没有预设值：用 `godot_set_engine_path`、godot-bridge 卡片上的 `Godot engine path` 字段，或给 `tool-godot-bridge` 行写 `config:` 块。必须指向真实 `.exe`，不要给版本管理器 shim。
+6. **想要 stdout 就用 `Godot_v…_win64.exe`，别用 `…_console.exe`：** console 包装器会把真引擎派生成 detached 子进程，于是 `godot_get_debug_output` / `godot_run_headless` 的 stdout 可能为空（退出码与游戏本身仍正常）。
 
 ## DSH 0.2+ 兼容性与故障排查
 
@@ -153,6 +206,10 @@ COVERAGE.md / COVERAGE.zh-CN.md   # 与 godot-mcp 的逐工具对比
 CHANGELOG.md / CHANGELOG.zh-CN.md  # 版本发布记录
 scripts/check-plugin-contract.mjs  # 静态依赖契约检查（`npm run check`）
 scripts/diagnose-dsh-resolution.mjs  # 可重跑的 DSH 运行时解析诊断（仅开发用）
+scripts/install.mjs                # 本 fork：不依赖 `dsh` CLI 的安装/卸载（`desktop` 也能用）
+scripts/doctor.mjs                 # 本 fork：15 项环境与兼容性体检（`--deep`）
+scripts/smoke.mjs                  # 本 fork：用一次性 Godot 项目跑 11 项端到端断言
+examples/minimal-4.7/              # 本 fork：一个小的真实 Godot 4.7 项目，用来驱动工具
 ```
 
 `mcp_interaction_server.gd`、`godot_operations.gd` 与 `validate_script.gd` 取自 [godot-mcp](https://github.com/tugcantopaloglu/godot-mcp)（MIT，随包内置）。插件通过模块相对路径定位这些脚本（`import.meta.url`）；传显式 `ops_script` / `validate_script` 参数可覆盖。
