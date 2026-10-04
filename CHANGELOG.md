@@ -28,6 +28,9 @@ This fork keeps the upstream plugin byte for byte: same version number (`0.2.0`)
 
 - `scripts/install.mjs`: `--dry-run` now short-circuits on its own (it used to fall through into a real install when combined with `--json`), removal reports removal rather than "installed", and the bundle edit is computed from the post-pnpm manifest.
 - `scripts/doctor.mjs`: reading the DSH version out of `app.asar` goes through the app (`ELECTRON_RUN_AS_NODE=1 … -e`), because `fs.existsSync` reports every asar path as missing under plain Node; version comparison no longer throws on an unparsable version.
+- `scripts/install.mjs`: the default `--spec` used to be `github:Nana7mi0721/godot-bridge#v<version>`, but this fork publishes no release tags, so that default pointed at a ref which does not exist. It is now the plain branch spec, and `--help` documents pinning with `#<branch|tag|commit>`.
+- `scripts/lib/load-probe*.mjs`: two assumptions that only held for godot-bridge, both exposed by probing a second bundle. The host entry is resolved the way Node does (`main` → `exports["."]` → `index.js`) instead of assuming `plugin/godot-bridge.mjs`, so `--plugin <dir>` works for other bundles (`dsh-comfyui-agent` ships `main: null`); and `ctx.inject(deps, callback)` now hands the callback a derived context the way cordis does instead of being stubbed out — `dsh-comfyui-agent` pulls `tools` through `inject`, so it reported 0 tools before this fix and 5 after.
+
 
 ## [0.2.0] - 2026-10-01
 

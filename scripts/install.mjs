@@ -7,7 +7,7 @@
 //   node scripts/install.mjs --list
 //   node scripts/install.mjs --profile desktop
 //   node scripts/install.mjs --profile desktop --link E:/path/to/godot-bridge
-//   node scripts/install.mjs --profile desktop --spec github:Nana7mi0721/godot-bridge#v0.2.1
+//   node scripts/install.mjs --profile desktop --spec github:Nana7mi0721/godot-bridge
 //   node scripts/install.mjs --profile desktop --remove
 //
 // It never hand-edits cordis.patch.yml: the package's `dsh.bundle.patch`
@@ -53,7 +53,9 @@ function usage() {
 Options
   --profile <name>  target dsh profile under $DSH_HOME/profiles (required to install)
   --spec <spec>     pnpm dependency spec; default github:Nana7mi0721/godot-bridge
-                    (also accepts npm:<pkg>@<ver>, file:<tarball>, or a URL)
+                    (append #<branch|tag|commit> to pin one revision — this fork
+                    publishes no release tags, so the branch form is the default;
+                    also accepts npm:<pkg>@<ver>, file:<tarball>, or a URL)
   --link <dir>      install this working copy instead (pnpm "link:" semantics).
                     Local development uses this; it requires the package's
                     peerDependencies to be declared, which they are.
@@ -127,7 +129,7 @@ const manifestPath = join(profileDir, 'package.json')
 
 const spec = opt.link
   ? 'link:' + resolve(opt.link).replace(/\\/g, '/')
-  : (opt.spec || `github:Nana7mi0721/godot-bridge#v${PKG.version}`)
+  : (opt.spec || 'github:Nana7mi0721/godot-bridge')
 
 // ── locate a runnable dsh CLI (the Electron-carried one always works) ─────
 function findDshApp() {

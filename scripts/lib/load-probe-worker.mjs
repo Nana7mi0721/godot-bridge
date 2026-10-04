@@ -69,14 +69,31 @@ const ctx = {
   },
 }
 const seenStubs = stubSet()
-for (const service of ['settings', 'configEditor', 'subprocess', 'fs', 'sandboxPolicy', 'inject', 'fiber', 'timer', 'loader', 'console']) {
+for (const service of ['settings', 'configEditor', 'subprocess', 'fs', 'sandboxPolicy', 'fiber', 'timer', 'loader', 'console']) {
   ctx[service] = makeStub(`ctx.${service}`, seenStubs)
+}
+// cordis semantics: `ctx.inject(deps, callback)` hands the callback a DERIVED
+// ctx that exposes those services — it is not a getter for a service value.
+// Plugins that register through it (dsh-comfyui-agent does: it pulls `tools`
+// with ctx.inject instead of listing it in `inject`) register nothing if this
+// is stubbed out, which would look like a broken plugin.
+ctx.inject = (deps, callback) => {
+  const list = Array.isArray(deps) ? deps : [deps]
+  const derived = Object.create(ctx)
+  for (const dep of list) if (!(dep in ctx)) derived[dep] = makeStub(`ctx.inject(${dep})`, seenStubs)
+  derived.ctx = derived
+  try { callback(derived) } catch (err) { warnings.push(`inject(${list.join(',')}) callback threw: ${err?.message || err}`) }
+  return () => {}
 }
 ctx.ctx = ctx
 
 try {
   const manifest = JSON.parse(readFileSync(join(pluginDir, 'package.json'), 'utf8').replace(/^\uFEFF/, ''))
-  const entry = pathToFileURL(join(pluginDir, manifest.main || 'plugin/godot-bridge.mjs')).href
+  // Node's own order: `main`, else the root `exports` condition, else index.js.
+  const exp = manifest.exports
+  const root = typeof exp === 'string' ? exp : exp?.['.']
+  const fromExports = typeof root === 'string' ? root : (root?.default || root?.import)
+  const entry = pathToFileURL(join(pluginDir, manifest.main || fromExports || 'index.js')).href
   await import(bootstrapUrl)
   const mod = await import(entry)
   const plugin = mod?.default ?? mod

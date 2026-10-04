@@ -37,6 +37,14 @@ node scripts/install.mjs --profile desktop --remove   # 卸载
 
 它走的就是同一套 `dsh plugin add`/`remove` 流程，只是改为调用应用自带的 CLI 并传 `manageDesktopProfile: true`——那是 Electron 壳自己的入口，也是**操作 `desktop` profile** 的唯一途径（否则 CLI 会拒绝：`error: profile "desktop" is managed exclusively by the Electron application`）。它刻意绕开 `PATH` 上的 `dsh` shim：那个 shim 可能指向一个已不存在的检出。`--spec <pnpm spec>` 可装本检出以外的东西（tag、tarball、`github:…`）；`--link <dir>` 则执行 `link:` 形态的安装。
 
+已安装的依赖规格也可以原地换来源——本 fork 自己的 `desktop` profile 就是这样从本地检出切到已发布仓库的：
+
+```sh
+node scripts/install.mjs --profile desktop --spec github:Nana7mi0721/godot-bridge
+```
+
+pnpm 会把解析到的提交记进 profile 的 `pnpm-lock.yaml`，因此安装可复现；`dsh.profile.bundles` 里的条目本来就是对的、保持不动，插件行自己的 `config`（包括已保存的 `godotPath`）也不会被碰。想跟进更新的提交就再跑一次同样的命令（或 `pnpm update`）；`link:` 规格一旦被替换，本地工作副本就不再被读取。
+
 装完别猜，直接验证：
 
 ```sh

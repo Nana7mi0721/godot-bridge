@@ -28,6 +28,9 @@
 
 - `scripts/install.mjs`：`--dry-run` 现在独占短路（此前与 `--json` 一起用会落入真实安装）、卸载时报告"已移除"而不是"已安装"、bundle 改动改为在 pnpm 之后读 manifest 计算。
 - `scripts/doctor.mjs`：读取 `app.asar` 里的 DSH 版本改为借应用读取（`ELECTRON_RUN_AS_NODE=1 … -e`），因为普通 Node 下 `fs.existsSync` 会把所有 asar 路径判为不存在；版本比较遇到无法解析的版本不再抛异常。
+- `scripts/install.mjs`：默认 `--spec` 原本是 `github:Nana7mi0721/godot-bridge#v<版本>`，而本 fork 从不发 release tag，等于默认指向一个不存在的 ref；现在改为纯分支规格，并在 `--help` 里说明可用 `#<branch|tag|commit>` 钉住某个版本。
+- `scripts/lib/load-probe*.mjs`：去掉两处只对 godot-bridge 成立的假设（探测第二个 bundle 时暴露）。宿主入口改为按 Node 的规则解析（`main` → `exports["."]` → `index.js`），不再假定 `plugin/godot-bridge.mjs`，于是 `--plugin <dir>` 对其他 bundle 也可用（`dsh-comfyui-agent` 的 `main` 是 null）；`ctx.inject(deps, callback)` 改为像 cordis 那样把派生 ctx 交给回调，而不再塞桩——`dsh-comfyui-agent` 正是靠 `inject` 取 `tools` 的，修之前它报告 0 个工具，修之后是 5 个。
+
 
 ## [0.2.0] - 2026-10-01
 

@@ -37,6 +37,14 @@ node scripts/install.mjs --profile desktop --remove   # uninstall
 
 It is the same `dsh plugin add`/`remove` flow, driven through the app's own bundled CLI with `manageDesktopProfile: true` — the Electron shell's own entry point, and the only way to touch the **`desktop` profile**, which the CLI otherwise refuses (`error: profile "desktop" is managed exclusively by the Electron application`). The `dsh` shim on `PATH` is bypassed on purpose: it can point at a checkout that no longer exists. `--spec <pnpm spec>` installs something other than this checkout (a tag, a tarball, `github:…`); `--link <dir>` performs a `link:` install instead.
 
+The dependency spec can also be swapped in place on an existing install — that is how this fork's own `desktop` profile moved from a local checkout to the published repository:
+
+```sh
+node scripts/install.mjs --profile desktop --spec github:Nana7mi0721/godot-bridge
+```
+
+pnpm records the resolved commit in the profile's `pnpm-lock.yaml`, so the install stays reproducible; the `dsh.profile.bundles` entry is already correct and is left alone, and the plugin row's own `config` — a saved `godotPath` included — is untouched. Re-run the same command (or `pnpm update`) to move to a newer commit; the moment a `link:` spec is replaced, the local working copy stops being read.
+
 After the install, verify instead of guessing:
 
 ```sh

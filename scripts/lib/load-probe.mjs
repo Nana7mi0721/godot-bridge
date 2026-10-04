@@ -65,6 +65,16 @@ if (!existsSync(join(profileDir, 'package.json'))) { console.error(`load-probe: 
 // --plugin: probe that directory instead of the copy installed in the profile.
 // Otherwise list every installed DSH bundle package in the profile, preferring
 // the one that owns this script (a checkout normally probes itself).
+// A bundle package's host entry is `main`, else the root `exports` condition,
+// else index.js — the same order Node itself uses. (dsh-comfyui-agent ships
+// `main: null` and only `exports["."]`, so reading `main` alone misses it.)
+function entryOf(dir, manifest) {
+  const exp = manifest?.exports
+  const root = typeof exp === 'string' ? exp : exp?.['.']
+  const fromExports = typeof root === 'string' ? root : (root?.default || root?.import)
+  return join(dir, manifest?.main || fromExports || 'index.js')
+}
+
 function installedPluginDirs(profileDir2, selfName) {
   const manifest = readManifest(join(profileDir2, 'package.json'))
   if (!manifest) return []
@@ -72,8 +82,9 @@ function installedPluginDirs(profileDir2, selfName) {
   const found = []
   for (const dep of Object.keys(manifest.dependencies || {})) {
     if (dep.startsWith('@deepseek-ai/')) continue
-    const m = readManifest(join(nm, dep, 'package.json'))
-    if (m?.dsh?.bundle?.patch && m.main) found.push(join(nm, dep))
+    const dir = join(nm, dep)
+    const m = readManifest(join(dir, 'package.json'))
+    if (m?.dsh?.bundle?.patch && existsSync(entryOf(dir, m))) found.push(dir)
   }
   const score = (dir) => (readManifest(join(dir, 'package.json'))?.name === selfName ? -1 : 0)
   return found.sort((a, b) => score(a) - score(b))
